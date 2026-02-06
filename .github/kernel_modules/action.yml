@@ -337,9 +337,9 @@ runs:
         INSTALL_MOD_PATH="$MSM/out"
 
         echo "Building kernel modules..."
-        make ARCH=arm64 LLVM=1 O=out olddefconfig
-        make -j$(nproc --all) ARCH=arm64 LLVM=1 O=out CC="ccache clang" modules       
-        make -j$(nproc --all) ARCH=arm64 LLVM=1 O=out INSTALL_MOD_PATH=$INSTALL_MOD_PATH modules_install
+        make ARCH=arm64 LLVM=1 LLVM_IAS=1 O=out olddefconfig
+        make -j$(nproc --all) ARCH=arm64 LLVM=1 LLVM_IAS=1 O=out CC="ccache clang" modules       
+        make -j$(nproc --all) ARCH=arm64 LLVM=1 LLVM_IAS=1 O=out INSTALL_MOD_PATH=$INSTALL_MOD_PATH modules_install
 
         #echo "Building out of tree external kernel modules..."
         #cd "$KERNEL_PLATFORM"
