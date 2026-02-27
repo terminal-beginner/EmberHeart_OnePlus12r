@@ -376,12 +376,13 @@ runs:
             ../vendor/qcom/opensource/securemsm-kernel/
         )
         
-        qcom_flags+=(
-            CONFIG_HDCP_QSEECOM=y
-            CONFIG_QTI_TZ_LOG=y
-            CONFIG_QCOM_SMCINVOKE=y
-            CONFIG_HW_RANDOM_MSM_LEGACY=y
-        )
+        ./scripts/config --file arch/arm64/configs/gki_defconfig \
+            --enable CONFIG_HDCP_QSEECOM \
+            --enable CONFIG_QTI_TZ_LOG \
+            --enable CONFIG_QCOM_SMCINVOKE \
+            --enable CONFIG_HW_RANDOM_MSM_LEGACY
+        
+        make ARCH=arm64 LLVM=1 O=out gki_defconfig
         
         for module in "${ext_qcom[@]}"; do
             make -C "../$module" M="../$module" ARCH=arm64 KERNEL_SRC=$KERNEL_PLATFORM/./msm-kernel O=$MSM/out LLVM=1 LLVM_IAS=1 DEPMOD=depmod DTC=dtc "${qcom_flags[@]}" modules
