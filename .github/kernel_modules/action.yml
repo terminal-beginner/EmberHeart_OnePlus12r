@@ -376,6 +376,7 @@ runs:
         for module in "${ext_qcom[@]}"; do
             make -C "../$module" M="../$module" ARCH=arm64 KERNEL_SRC=$KERNEL_PLATFORM/./msm-kernel O=$MSM/out LLVM=1 LLVM_IAS=1 DEPMOD=depmod DTC=dtc "${qcom_flags[@]}" modules
             make -C "../$module" M="../$module" ARCH=arm64 KERNEL_SRC=$KERNEL_PLATFORM/./msm-kernel O=$MSM/out LLVM=1 LLVM_IAS=1 DEPMOD=depmod DTC=dtc "${qcom_flags[@]}" INSTALL_MOD_PATH=$INSTALL_MOD_PATH modules_install
+            find $KERNEL_PLATFORM -type f -name "Module.symvers"
         done
 
     - name: Filter modules
