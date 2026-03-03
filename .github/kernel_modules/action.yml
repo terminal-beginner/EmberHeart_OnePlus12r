@@ -243,7 +243,7 @@ runs:
           --module CONFIG_ATH9K_COMMON \
           --module CONFIG_ATH10K \
           --module CONFIG_ATH10K_USB \
-          --moduleCONFIG_ATH11K
+          --module CONFIG_ATH11K
 
         # Mediatek drivers
         ./scripts/config --file arch/arm64/configs/gki_defconfig \
