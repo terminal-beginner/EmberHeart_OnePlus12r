@@ -1,0 +1,18 @@
+{
+  "model": "OP12r",
+  "soc": "kalama",
+  "branch": "oneplus/sm8550",
+  "manifest_oos14": "oneplus_12r_u.xml",
+  "manifest_oos14_modules": "oneplus_12r_u.xml",
+  "manifest_oos15": "oneplus_12r_v.xml",
+  "manifest_oos15_modules": "oneplus_12r_v.xml",
+  "manifest_fast_build_oos15": "https://raw.githubusercontent.com/nullptr-t-oss/kernel_patches/refs/heads/main/kernel_manifest/oneplus_11_v_kernel.xml",
+  "manifest_fast_build_oos15_modules": "https://raw.githubusercontent.com/nullptr-t-oss/kernel_patches/refs/heads/main/kernel_manifest/oneplus_11_v_modules.xml",
+  "manifest_oos16": "oneplus_12r_b.xml",
+  "manifest_oos16_modules": "oneplus_12r_b.xml",
+  "manifest_oos16_tmp": "oneplus_12r_b.xml",
+  "manifest_oos16_tmp_modules": "https://raw.githubusercontent.com/terminal-beginner/kernel_patches/refs/heads/main/kernel_manifest/oneplus_12r_b_modules.xml",
+  "android_version": "android13",
+  "kernel_version": "5.15",
+  "hmbird": false
+}
