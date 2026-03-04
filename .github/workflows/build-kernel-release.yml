@@ -51,8 +51,8 @@ on:
         required: true
         type: choice
         options:
-          - OP11
-        default: OP11
+          - OP12r
+        default: OP12r
 
 jobs:
   set-op-model:
