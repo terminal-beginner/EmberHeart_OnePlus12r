@@ -390,7 +390,9 @@ runs:
             ../vendor/qcom/opensource/eva-kernel
             ../vendor/qcom/opensource/wlan/platform
             ../vendor/qcom/opensource/bt-kernel
-            ../vendor/qcom/opensource/wlan/qcacld-3.0
+            ../vendor/nxp/opensource/driver
+            ../vendor/st/opensource/driver
+            ../vendor/st/opensource/eSE-driver
         )
 
         cd "$MSM"
