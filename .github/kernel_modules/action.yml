@@ -419,20 +419,20 @@ runs:
         find lib/modules/"$UNAME" -type f -name '*.ko' -exec cp {} modules/ \;
         echo "Total modules copied: $(find modules -type f -name '*.ko' | wc -l)"
 
-        echo "Removing unnecessary modules..."
-        cd modules
+        #echo "Removing unnecessary modules..."
+        #cd modules
         # Download default module list
-        curl -L -o default_modules.txt https://raw.githubusercontent.com/nullptr-t-oss/kernel_patches/refs/heads/main/default_modules.txt
+        #curl -L -o default_modules.txt https://raw.githubusercontent.com/nullptr-t-oss/kernel_patches/refs/heads/main/default_modules.txt
         # Remove modules in the default list
 
-        while IFS= read -r module; do
-          if [ -e "$module" ]; then
-            rm -f "$module"
-            echo "Removed module: $module"
-          fi
-        done < default_modules.txt
-        cd ..
-        echo "Modules remaining after filtering: $(find modules -type f -name '*.ko' | wc -l)"
+        #while IFS= read -r module; do
+        #  if [ -e "$module" ]; then
+        #    rm -f "$module"
+        #    echo "Removed module: $module"
+        #  fi
+        #done < default_modules.txt
+        #cd ..
+        #echo "Modules remaining after filtering: $(find modules -type f -name '*.ko' | wc -l)"
 
     - name: Create Kernel Modules zip
       id: create_zip
