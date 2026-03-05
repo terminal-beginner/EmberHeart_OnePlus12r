@@ -387,6 +387,7 @@ runs:
             ../vendor/qcom/opensource/datarmnet-ext/perf
             ../vendor/qcom/opensource/datarmnet-ext/perf_tether
             ../vendor/qcom/opensource/datarmnet-ext/wlan
+            ../vendor/qcom/opensource/eva-kernel
             ../vendor/qcom/opensource/wlan/platform
             ../vendor/qcom/opensource/bt-kernel
             ../vendor/qcom/opensource/wlan/qcacld-3.0
