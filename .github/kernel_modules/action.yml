@@ -359,6 +359,12 @@ runs:
 
         # OPLUS ext modules list
         ext_oplus=($(cat "$KERNEL_PLATFORM/oplus/config/modules.ext.$KERNEL_VER.oplus"))
+
+        ext_oplus+=(
+            ../vendor/oplus/kernel/explorer
+            ../vendor/oplus/kernel/cpu/sched
+            ../vendor/oplus/kernel/touchpanel/oplus_touchscreen/Novatek
+        )
         
         # OPLUS ext modules
         for module in "${ext_oplus[@]}"; do
