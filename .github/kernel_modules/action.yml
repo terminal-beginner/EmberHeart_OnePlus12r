@@ -362,8 +362,6 @@ runs:
 
         ext_oplus+=(
             ../vendor/oplus/kernel/explorer
-            ../vendor/oplus/kernel/cpu
-            ../vendor/oplus/kernel/touchpanel
         )
         
         # OPLUS ext modules
