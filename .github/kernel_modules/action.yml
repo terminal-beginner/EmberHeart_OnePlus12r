@@ -408,7 +408,7 @@ runs:
 
         cd "$MSM"
 
-        make oldconfig && make prepare
+        make ARCH=arm64 LLVM=1 O=out oldconfig && make ARCH=arm64 LLVM=1 O=out prepare
 
         cd "$KERNEL_PLATFORM"
         QCACLD="../vendor/qcom/opensource/wlan/qcacld-3.0"
