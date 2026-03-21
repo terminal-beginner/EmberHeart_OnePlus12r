@@ -360,58 +360,6 @@ runs:
         make -j$(nproc --all) ARCH=arm64 LLVM=1 O=$OUT CC="ccache clang" modules
         make -j$(nproc --all) ARCH=arm64 LLVM=1 O=$OUT INSTALL_MOD_PATH=$INSTALL_MOD_PATH modules_install
 
-        cd "$KERNEL_PLATFORM"
-
-        # OPLUS ext modules list
-        ext_oplus=($(cat "$KERNEL_PLATFORM/oplus/config/modules.ext.$KERNEL_VER.oplus"))
-
-        ext_oplus+=(
-            ../vendor/oplus/kernel/explorer
-        )
-        # OPLUS ext modules
-        for module in "${ext_oplus[@]}"; do
-            make -C "$module" M="../$module" -j$(nproc --all) ARCH=arm64 KERNEL_SRC=$KERNEL_PLATFORM/./msm-kernel O=$MSM/out LLVM=1 LLVM_IAS=1 DEPMOD=depmod DTC=dtc CHIPSET_COMPANY=QCOM OPLUS_VND_BUILD_PLATFORM=$SOC
-            make -C "$module" M="../$module" -j$(nproc --all) ARCH=arm64 KERNEL_SRC=$KERNEL_PLATFORM/./msm-kernel O=$MSM/out LLVM=1 LLVM_IAS=1 DEPMOD=depmod DTC=dtc CHIPSET_COMPANY=QCOM OPLUS_VND_BUILD_PLATFORM=$SOC INSTALL_MOD_PATH=$INSTALL_MOD_PATH modules_install
-        done
-
-        # QCOM ext modules
-        ext_qcom+=(
-            ../vendor/qcom/opensource/mmrm-driver
-            ../vendor/qcom/opensource/mm-drivers/hw_fence
-            ../vendor/qcom/opensource/mm-drivers/sync_fence
-            ../vendor/qcom/opensource/mm-drivers/msm_ext_display
-            ../vendor/qcom/opensource/securemsm-kernel
-            ../vendor/qcom/opensource/display-drivers/msm
-            ../vendor/qcom/opensource/audio-kernel
-            ../vendor/qcom/opensource/camera-kernel
-            ../vendor/qcom/opensource/video-driver
-            ../vendor/qcom/opensource/graphics-kernel
-            ../vendor/qcom/opensource/dataipa/drivers/platform/msm
-            ../vendor/qcom/opensource/datarmnet/core
-            ../vendor/qcom/opensource/datarmnet-ext/aps
-            ../vendor/qcom/opensource/datarmnet-ext/offload
-            ../vendor/qcom/opensource/datarmnet-ext/shs
-            ../vendor/qcom/opensource/datarmnet-ext/sch
-            ../vendor/qcom/opensource/datarmnet-ext/perf
-            ../vendor/qcom/opensource/datarmnet-ext/perf_tether
-            ../vendor/qcom/opensource/datarmnet-ext/wlan
-            ../vendor/qcom/opensource/eva-kernel
-            ../vendor/qcom/opensource/wlan/platform
-            ../vendor/qcom/opensource/bt-kernel
-            ../vendor/nxp/opensource/driver
-            ../vendor/st/opensource/driver
-            ../vendor/st/opensource/eSE-driver
-        )
-
-        cd "$MSM"
-
-        cd "$KERNEL_PLATFORM"
-        
-        for module in "${ext_qcom[@]}"; do
-            make -C "$module" M="../$module" -j$(nproc --all) ARCH=arm64 KERNEL_SRC=$KERNEL_PLATFORM/./msm-kernel O=$MSM/out LLVM=1 LLVM_IAS=1 DEPMOD=depmod DTC=dtc "${qcom_flags[@]}" modules
-            make -C "$module" M="../$module" -j$(nproc --all) ARCH=arm64 KERNEL_SRC=$KERNEL_PLATFORM/./msm-kernel O=$MSM/out LLVM=1 LLVM_IAS=1 DEPMOD=depmod DTC=dtc "${qcom_flags[@]}" INSTALL_MOD_PATH=$INSTALL_MOD_PATH modules_install
-        done
-
     - name: Filter modules
       shell: bash
       run: |
