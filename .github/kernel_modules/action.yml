@@ -425,8 +425,11 @@ runs:
 
         cd "$KERNEL_PLATFORM"
 
+        # Exports for external kernel modules
+        export BOARD_PLATFORM=kalama
         export ROOT_DIR=$KERNEL_PLATFORM
         export KERNEL_DIR=msm-kernel
+
         MAKE_FLAGS+=(
           KERNEL_SRC="$ROOT_DIR/$KERNEL_DIR"
         )
