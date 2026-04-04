@@ -392,6 +392,7 @@ runs:
           LLVM_IAS=1
           ARCH=arm64
           SUBARCH=arm64
+          CROSS_COMPILE="aarch64-linux-gnu-"
           LD=ld.lld
           HOSTLD=ld.lld
           AR=llvm-ar
