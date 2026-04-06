@@ -422,8 +422,10 @@ runs:
             patch -p1 --forward < "../../../kernel_patches/next/susfs_fix_patches/$susfs_version/ksu_toolkit.patch"
             echo "Patching Multi-manager Support for SusFS kernel!"
             patch -p1 --forward < "../../../kernel_patches/next/susfs_fix_patches/$susfs_version/multi_manager.patch"
-            echo "Patching Multi-manager sepolicy Support for SusFS kernel!"
-            patch -p1 --forward < "../../../kernel_patches/next/susfs_fix_patches/$susfs_version/multi_sepolicy_fix.patch"
+            if [ "$KSUVER" -ge 33068 ] && [ "$KSUVER" -lt 33070 ]; then
+                echo "Patching Multi-manager sepolicy Support for SusFS kernel!"
+                patch -p1 --forward < "../../../kernel_patches/next/susfs_fix_patches/$susfs_version/multi_sepolicy_fix.patch"
+            fi
             ;;
           *)
             echo "::error::Unsupported SUSFS version: $susfs_version"
