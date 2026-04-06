@@ -1065,6 +1065,7 @@ runs:
     - name: Create system_dlkm Image
       shell: bash
       run: |
+        PREBUILTS="https://raw.githubusercontent.com/nullptr-t-oss/kernel_patches/refs/heads/main/prebuilts/$MODEL"
         CONFIG_DIR="$GITHUB_WORKSPACE/$CONFIG"
         KERNEL_PLATFORM="$CONFIG_DIR/kernel_platform"
         COMMON="$KERNEL_PLATFORM/common"
@@ -1092,7 +1093,7 @@ runs:
         cd "$DLKM_STAGING_DIR"
         mkdir -p etc
         cd etc
-        curl -L -o build.prop https://raw.githubusercontent.com/nullptr-t-oss/kernel_patches/refs/heads/main/prebuilts/$MODEL/system_dlkm/build.prop
+        curl -L -o build.prop "$PREBUILTS/system_dlkm/build.prop"
         touch fs_config_dirs fs_config_files
 
         cd "$OUT"

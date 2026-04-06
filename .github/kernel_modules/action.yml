@@ -491,6 +491,7 @@ runs:
       id: create_vendor_dlkm
       shell: bash
       run: |
+        PREBUILTS="https://raw.githubusercontent.com/nullptr-t-oss/kernel_patches/refs/heads/main/prebuilts/$MODEL"
         OUT="$MSM/out"
         UNAME=$(ls "$OUT/lib/modules/")
         DLKM_STAGING_DIR="$OUT/vendor_dlkm_staging"
@@ -526,9 +527,10 @@ runs:
 
         # add prebuilt files
         cd "$DLKM_STAGING_ROOT"
-        curl -L -o modules.load https://raw.githubusercontent.com/nullptr-t-oss/kernel_patches/refs/heads/main/prebuilts/$MODEL/vendor_dlkm/modules.load
-        curl -L -o modules.blocklist https://raw.githubusercontent.com/nullptr-t-oss/kernel_patches/refs/heads/main/prebuilts/$MODEL/vendor_dlkm/modules.blocklist
-        curl -L -o system_dlkm.modules.blocklist https://raw.githubusercontent.com/nullptr-t-oss/kernel_patches/refs/heads/main/prebuilts/$MODEL/vendor_dlkm/system_dlkm.modules.blocklist
+        curl -L -o modules.load "$PREBUILTS/vendor_dlkm/modules.load"
+        curl -L "$PREBUILTS/vendor_dlkm/modules.load.extra >> modules.load"
+        curl -L -o modules.blocklist "$PREBUILTS/vendor_dlkm/modules.blocklist"
+        curl -L -o system_dlkm.modules.blocklist "$PREBUILTS/vendor_dlkm/system_dlkm.modules.blocklist"
 
         cp "$DLKM_STAGING_ROOT/modules.load" "$OUT/vendor_dlkm.modules.load"
 
@@ -536,7 +538,7 @@ runs:
         cd "$DLKM_STAGING_DIR"
         mkdir -p etc
         cd etc
-        curl -L -o build.prop https://raw.githubusercontent.com/nullptr-t-oss/kernel_patches/refs/heads/main/prebuilts/$MODEL/vendor_dlkm/build.prop
+        curl -L -o build.prop "$PREBUILTS/vendor_dlkm/build.prop"
         touch fs_config_dirs fs_config_files
 
         cd "$OUT"
@@ -549,8 +551,9 @@ runs:
 
         build_image "$DLKM_STAGING_DIR" "${vendor_dlkm_props_file}" "$OUT/vendor_dlkm.img" /dev/null
 
-        cp "$OUT/vendor_dlkm.img" "$CONFIG_DIR/artifacts/"
-        cp "$OUT/vendor_dlkm.modules.load" "$CONFIG_DIR/artifacts/"
+        cp "$OUT/vendor_dlkm.img" "$ARTIFACTS_DIR"
+        cp "$OUT/vendor_dlkm.modules.load" "$ARTIFACTS_DIR"
+        cp "$OUT/vendor_dlkm.modules.load" "$ARTIFACTS_DIR_DEBUG"
 
     - name: Filter modules
       shell: bash
