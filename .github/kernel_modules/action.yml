@@ -487,6 +487,9 @@ runs:
             export KBUILD_EXTRA_SYMBOLS=$(find "$KERNEL_PLATFORM/vendor" -name "Module.symvers" | tr '\n' ' ')
         done
 
+        # To be used for preparing modules.order in create_vendor_dlkm step
+        EXT_MODULES=("${EXT_OPLUS[@]#../}" "${EXT_QCOM[@]#../}") >> "$GITHUB_ENV"
+
     - name: Create vendor_dlkm Image
       id: create_vendor_dlkm
       shell: bash
@@ -494,6 +497,7 @@ runs:
         PREBUILTS="https://raw.githubusercontent.com/nullptr-t-oss/kernel_patches/refs/heads/main/prebuilts/$MODEL"
         OUT="$MSM/out"
         UNAME=$(ls "$OUT/lib/modules/")
+        MODULES_STAGING_ROOT="$OUT/lib/modules/$UNAME"
         DLKM_STAGING_DIR="$OUT/vendor_dlkm_staging"
         DLKM_STAGING_ROOT="$DLKM_STAGING_DIR/lib/modules"
         DEPMOD_DIR="$DLKM_STAGING_DIR"
@@ -505,14 +509,35 @@ runs:
         # Create folder of highest depth amongst all
         mkdir -p "$DEPMOD_DIR_ROOT"
 
+        # add prebuilt files
+        cd "$DLKM_STAGING_ROOT"
+        curl -L -o modules.load "$PREBUILTS/vendor_dlkm/modules.load"
+        curl -L "$PREBUILTS/vendor_dlkm/modules.load.extra" >> modules.load
+        curl -L -o modules.blocklist "$PREBUILTS/vendor_dlkm/modules.blocklist"
+        curl -L -o system_dlkm.modules.blocklist "$PREBUILTS/vendor_dlkm/system_dlkm.modules.blocklist"
+
         # copy modules to DEPMOD_DIR_ROOT
         # NOTE: do depmod from DEPMOD_DIR
-        find "$OUT/lib/modules/$UNAME" -type f -name '*.ko' -exec cp -p {} "$DEPMOD_DIR_ROOT/" \;
+        cd "$MODULES_STAGING_ROOT"
+        missing_modules=$(mktemp)
+        while IFS= read -r module || [ -n "$module" ]; do
+          module_path=$(find . -name "$module" -print -quit)
+          if [ -n "$module_path" ]; then
+            cp "$module_path" "$DEPMOD_DIR_ROOT"
+          else
+            # TODO: use prebuilt modules pulled from stock ROM
+            echo "WARNING: $module not found"
+            echo "$module" >> "$missing_modules"
+          fi
+        done < "$DLKM_STAGING_ROOT/modules.load"
 
         # NOTE: modules.order is not present in stock_dlkm, this modules.order is strictly for debugging purposes only !
         modules_order="$(mktemp)"
-        cat "$OUT/lib/modules/$UNAME/modules.order" >> "$modules_order"
-        find "$OUT/lib/modules/$UNAME/extra" -type f -name 'modules.order*' -exec cat {} >> "$modules_order" \;
+        cat "$MODULES_STAGING_ROOT/modules.order" >> "$modules_order"
+        # Append modules.order in the sequence we compiled them
+        for MODULE in "${EXT_MODULES[@]}"; do
+          find "$MODULES_STAGING_ROOT/extra/$MODULE" -type f -name 'modules.order*' -exec cat {} >> "$modules_order" \;
+        done
         sed -i 's/.*\///g' "$modules_order"
         cp "$modules_order" "$ARTIFACTS_DIR_DEBUG/modules.order"
 
@@ -524,13 +549,6 @@ runs:
         # Copy modules from depmod dir and delete the dir since vendor dlkm is flattened
         find "$DEPMOD_DIR_ROOT" -type f -name '*.ko' -exec cp {} "$DLKM_STAGING_ROOT/" \;
         rm -rf "$DEPMOD_DIR_ROOT"
-
-        # add prebuilt files
-        cd "$DLKM_STAGING_ROOT"
-        curl -L -o modules.load "$PREBUILTS/vendor_dlkm/modules.load"
-        curl -L "$PREBUILTS/vendor_dlkm/modules.load.extra" >> modules.load
-        curl -L -o modules.blocklist "$PREBUILTS/vendor_dlkm/modules.blocklist"
-        curl -L -o system_dlkm.modules.blocklist "$PREBUILTS/vendor_dlkm/system_dlkm.modules.blocklist"
 
         cp "$DLKM_STAGING_ROOT/modules.load" "$OUT/vendor_dlkm.modules.load"
 
@@ -554,6 +572,7 @@ runs:
         cp "$OUT/vendor_dlkm.img" "$ARTIFACTS_DIR"
         cp "$OUT/vendor_dlkm.modules.load" "$ARTIFACTS_DIR"
         cp "$OUT/vendor_dlkm.modules.load" "$ARTIFACTS_DIR_DEBUG"
+        cp "$missing_modules" "$ARTIFACTS_DIR_DEBUG/modules.load.missing"
 
     - name: Filter modules
       shell: bash
