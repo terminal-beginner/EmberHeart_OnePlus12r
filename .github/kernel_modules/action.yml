@@ -145,6 +145,9 @@ runs:
         KERNEL_PLATFORM="$CONFIG_DIR/kernel_platform"
         MSM="$KERNEL_PLATFORM/msm-kernel"
 
+        echo "Creating folder for configuration: $CONFIG"
+        mkdir -p "$CONFIG"
+
         mkdir -p "$ARTIFACTS_DIR"
         mkdir -p "$ARTIFACTS_DIR_DEBUG"
 
@@ -167,8 +170,6 @@ runs:
       shell: bash
       run: |
         set -euo pipefail
-        echo "Creating folder for configuration: $CONFIG"
-        mkdir -p "$CONFIG"
         cd "$CONFIG"
         echo "Initializing and syncing kernel source..."
         if [[ "$MANIFEST" == https://* ]]; then
@@ -647,8 +648,7 @@ runs:
         path: ${{ env.CONFIG }}/artifacts/
 
     - name: Upload Debug zip
-      if: success() && steps.create_vendor_dlkm.conclusion == 'success'
       uses: actions/upload-artifact@v4
       with:
-        name: debug-kernel-modules-${{ env.CONFIG }}
+        name: debug-msm-${{ env.CONFIG }}
         path: ${{ env.CONFIG }}/debug/artifacts/

@@ -159,7 +159,25 @@ runs:
         set -euo pipefail
         # Derive a unique build directory name
         CONFIG="$MODEL"
+        CONFIG_DIR="$GITHUB_WORKSPACE/$CONFIG"
+        ARTIFACTS_DIR="$CONFIG_DIR/artifacts"
+        ARTIFACTS_DIR_DEBUG="$CONFIG_DIR/debug/artifacts"
+        KERNEL_PLATFORM="$CONFIG_DIR/kernel_platform"
+        COMMON="$KERNEL_PLATFORM/common"
+
+        echo "Creating folder for configuration: $CONFIG"
+        mkdir -p "$CONFIG"
+
+        mkdir -p "$ARTIFACTS_DIR"
+        mkdir -p "$ARTIFACTS_DIR_DEBUG"
+
         echo "CONFIG=$CONFIG" >> "$GITHUB_ENV"
+        echo "CONFIG_DIR=$CONFIG_DIR" >> "$GITHUB_ENV"
+        echo "ARTIFACTS_DIR=$ARTIFACTS_DIR" >> "$GITHUB_ENV"
+        echo "ARTIFACTS_DIR_DEBUG=$ARTIFACTS_DIR_DEBUG" >> "$GITHUB_ENV"
+        echo "KERNEL_PLATFORM=$KERNEL_PLATFORM" >> "$GITHUB_ENV"
+        echo "COMMON=$COMMON" >> "$GITHUB_ENV"
+
         # Install repo tool if missing
         REPO="/usr/local/bin/repo"
         if [ ! -x "$REPO" ]; then
@@ -180,8 +198,6 @@ runs:
       shell: bash
       run: |
         set -euo pipefail
-        echo "Creating folder for configuration: $CONFIG"
-        mkdir -p "$CONFIG"
         cd "$CONFIG"
         echo "Initializing and syncing kernel source..."
         if [[ "$MANIFEST" == https://* ]]; then
@@ -208,10 +224,7 @@ runs:
       shell: bash
       run: |
         set -euo pipefail
-        CONFIG_DIR="$GITHUB_WORKSPACE/$CONFIG"
-        ARTIFACTS_DIR="$CONFIG_DIR/artifacts"
-        mkdir -p "$ARTIFACTS_DIR"
-        cd "$CONFIG_DIR/kernel_platform/common"
+        cd "$COMMON"
         CONFIG_FILES=("build.config.common" "build.config.constants")
         BRANCH_LINE=""
         for f in "${CONFIG_FILES[@]}"; do
@@ -299,7 +312,7 @@ runs:
       shell: bash
       run: |
         set -euo pipefail
-        cd "$CONFIG/kernel_platform"
+        cd "$KERNEL_PLATFORM"
         rm -f common/android/abi_gki_protected_exports_* || true
         rm -f msm-kernel/android/abi_gki_protected_exports_* || true
         df -h
@@ -309,7 +322,7 @@ runs:
       run: |
         set -euo pipefail
         echo "::group::Add KernelSU Next"
-        cd "$CONFIG/kernel_platform"
+        cd "$KERNEL_PLATFORM"
         echo "Adding KernelSU Next..."
         if [ "${{ inputs.ksun_branch_or_hash }}" = "" ]; then
           curl --fail --location --proto '=https' -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/dev/kernel/setup.sh" | bash -
@@ -350,7 +363,7 @@ runs:
       run: |
         set -euo pipefail
         echo "::group::Applying SUSFS patches..."
-        cd "$CONFIG/kernel_platform"
+        cd "$KERNEL_PLATFORM"
         cp ../../susfs4ksu/kernel_patches/50_add_susfs_in_${{ env.SUSFS_KERNEL_BRANCH }}.patch ./common/
         cp ../../susfs4ksu/kernel_patches/fs/* ./common/fs/
         cp ../../susfs4ksu/kernel_patches/include/linux/* ./common/include/linux/
@@ -508,7 +521,7 @@ runs:
       run: |
         set -euo pipefail
         echo "::group::Adding BBG"
-        cd "$CONFIG/kernel_platform"
+        cd "$KERNEL_PLATFORM"
         if ! wget -O- https://github.com/vc-teahouse/Baseband-guard/raw/main/setup.sh | bash -s fix_blkdev_rename; then
           echo "::warning::BBG setup script failed, continuing anyway"
         fi
@@ -526,7 +539,7 @@ runs:
       if: ${{ env.NEED_HOOKS == 'true' }}
       run: |
         set -euo pipefail
-        cd "$CONFIG/kernel_platform/common"
+        cd "$COMMON"
         patch -p1 < ../../../kernel_patches/next/scope_min_manual_hooks_v1.4.patch
 
     - name: Add KernelSU-Next and SUSFS Configuration Settings
@@ -534,7 +547,7 @@ runs:
       run: |
         set -euo pipefail
         echo "::group::Adding KernelSU and SUSFS configs..."
-        cd "$CONFIG/kernel_platform/common"
+        cd "$COMMON"
 
         ./scripts/config --file arch/arm64/configs/gki_defconfig \
           --enable CONFIG_KSU \
@@ -567,7 +580,7 @@ runs:
       run: |
         set -euo pipefail
         echo "::group::Adding Oneplus BBR"
-        cd "$CONFIG/kernel_platform/common"
+        cd "$COMMON"
 
         ./scripts/config --file arch/arm64/configs/gki_defconfig \
           --enable CONFIG_TCP_CONG_ADVANCED \
@@ -584,7 +597,7 @@ runs:
       run: |
         set -euo pipefail
         echo "::group::Applying my patches from my repo..."
-        cd "$CONFIG/kernel_platform/common"
+        cd "$COMMON"
 
         for patch_file in ../../../my_patches/kernel_patches/op11/common/*.patch; do
             echo "Applying patch: $patch_file"
@@ -600,7 +613,7 @@ runs:
       run: |
         set -euo pipefail
         echo "::group::Applying patches from wild kernels..."
-        cd "$CONFIG/kernel_platform/common"
+        cd "$COMMON"
 
         patch -p1 --forward < "../../../kernel_patches/common/mem_opt_prefetch.patch"
 
@@ -635,7 +648,7 @@ runs:
       run: |
         set -euo pipefail
         echo "::group::Applying Nethunter configs..."
-        cd "$CONFIG/kernel_platform/common"
+        cd "$COMMON"
 
         # Bluetooth configs
         ./scripts/config --file arch/arm64/configs/gki_defconfig \
@@ -719,7 +732,7 @@ runs:
       run: |
         set -euo pipefail
         echo "::group::Adding other configs..."
-        cd "$CONFIG/kernel_platform/common"
+        cd "$COMMON"
 
         ./scripts/config --file arch/arm64/configs/gki_defconfig \
           --enable CONFIG_LRU_GEN_ENABLED
@@ -732,7 +745,7 @@ runs:
       run: |
         set -euo pipefail
         echo "::group::Adding TTL support..."
-        cd "$CONFIG/kernel_platform/common"
+        cd "$COMMON"
 
         ./scripts/config --file arch/arm64/configs/gki_defconfig \
           --enable CONFIG_IP_NF_TARGET_TTL \
@@ -747,7 +760,7 @@ runs:
       run: |
         set -euo pipefail
         echo "::group::Adding IP SET support..."
-        cd "$CONFIG/kernel_platform/common"
+        cd "$COMMON"
 
         ./scripts/config --file arch/arm64/configs/gki_defconfig \
           --enable CONFIG_IP_SET \
@@ -777,7 +790,7 @@ runs:
       run: |
         set -euo pipefail
         echo "::group::Applying build based configs..."
-        cd "$CONFIG/kernel_platform/common"
+        cd "$COMMON"
 
         ./scripts/config --file arch/arm64/configs/gki_defconfig \
           --enable CONFIG_LTO_CLANG_THIN \
@@ -807,8 +820,6 @@ runs:
       run: |
         set -euo pipefail
         echo "::group::Saving Build Metadata..."
-        CONFIG_DIR="$GITHUB_WORKSPACE/$CONFIG"
-        ARTIFACTS_DIR="$CONFIG_DIR/artifacts"
         cd "$ARTIFACTS_DIR"
         echo "kernel_version=${{ env.KERNEL_FULL_VER }}" >> "$GITHUB_OUTPUT"
         echo "ksu_version=${KSUVER:-unknown}" >> "$GITHUB_OUTPUT"
@@ -822,8 +833,7 @@ runs:
       run: |
         set -euo pipefail
         echo "::group::Applying Kernel Branding..."
-        KERNEL_PLATFORM="$GITHUB_WORKSPACE/$CONFIG/kernel_platform"
-        cd "$KERNEL_PLATFORM/common"
+        cd "$COMMON"
         mkdir -p out
         CUSTOM_LOCALVERSION="-${ANDROID_VER}-${{ inputs.kernel_uname }}"
         echo "CUSTOM_LOCALVERSION=$CUSTOM_LOCALVERSION" >> "$GITHUB_ENV"
@@ -836,9 +846,8 @@ runs:
       run: |
         set -euo pipefail
         echo "::group::Detecting Clang..."
-        KP="$GITHUB_WORKSPACE/$CONFIG/kernel_platform"
         CLANG_FOUND=false
-        for base in "$KP/prebuilts" "$KP/prebuilts-master"; do
+        for base in "$KERNEL_PLATFORM/prebuilts" "$KERNEL_PLATFORM/prebuilts-master"; do
           [ -d "$base/clang/host/linux-x86" ] || continue
           latest=$(ls -d "$base"/clang/host/linux-x86/clang-r*/ 2>/dev/null | sort -V | tail -n1 || true)
           if [ -n "$latest" ] && [ -x "$latest/bin/clang" ]; then
@@ -867,8 +876,6 @@ runs:
       run: |
         set -euo pipefail
         echo "::group::Build kernel"
-        KERNEL_PLATFORM="$GITHUB_WORKSPACE/$CONFIG/kernel_platform"
-        COMMON="$KERNEL_PLATFORM/common"
         cd "$COMMON"
         : > "$COMMON/.scmversion"
 
@@ -943,8 +950,6 @@ runs:
       run: |
         set -euo pipefail
         echo "::group::Collecting Build Stats..."
-        KERNEL_PLATFORM="$GITHUB_WORKSPACE/$CONFIG/kernel_platform"
-        COMMON="$KERNEL_PLATFORM/common"
         OUT="$COMMON/out"
         IMG="$OUT/arch/arm64/boot/Image"
 
@@ -999,8 +1004,7 @@ runs:
       run: |
         set -euo pipefail
         echo "::group::Creating AK3 zip..."
-        CONFIG_DIR="$GITHUB_WORKSPACE/$CONFIG"
-        IMAGE_PATH="$CONFIG_DIR/kernel_platform/common/out/arch/arm64/boot/Image"
+        IMAGE_PATH="$COMMON/out/arch/arm64/boot/Image"
         if [ ! -f "$IMAGE_PATH" ]; then
           echo "ERROR: Built Image not found"
           exit 1
@@ -1014,8 +1018,6 @@ runs:
         curl https://raw.githubusercontent.com/nullptr-t-oss/kernel_patches/refs/heads/main/banner > banner
 
         ZIP_NAME="AnyKernel3_${MODEL}_${{ env.KERNEL_FULL_VER }}_Next_${KSUVER}_SuSFS_${SUSVER}.zip"
-        ARTIFACTS_DIR="$CONFIG_DIR/artifacts"
-        mkdir -p "$ARTIFACTS_DIR"
 
         echo "Creating flashable zip: $ZIP_NAME"
         ( cd "$GITHUB_WORKSPACE/AnyKernel3" && zip -r "$ARTIFACTS_DIR/$ZIP_NAME" ./* >/dev/null )
@@ -1035,8 +1037,7 @@ runs:
       run: |
         set -euo pipefail
         echo "::group::Creating boot image..."
-        CONFIG_DIR="$GITHUB_WORKSPACE/$CONFIG"
-        IMAGE="$CONFIG_DIR/kernel_platform/common/out/arch/arm64/boot/Image"
+        IMAGE="$COMMON/out/arch/arm64/boot/Image"
 
         cd "$GITHUB_WORKSPACE"
         mkdir -p boot
@@ -1059,18 +1060,16 @@ runs:
         $MAGISKBOOT repack $BOOT
 
         mv -f new-boot.img EmberHeart_boot.img
-        cp EmberHeart_boot.img "$CONFIG_DIR/artifacts/"
+        cp EmberHeart_boot.img "$ARTIFACTS_DIR"
 
         echo "Boot image created ✅"
         echo "::endgroup::"
 
     - name: Create system_dlkm Image
+      id: create_system_dlkm
       shell: bash
       run: |
         PREBUILTS="https://raw.githubusercontent.com/nullptr-t-oss/kernel_patches/refs/heads/main/prebuilts/$MODEL"
-        CONFIG_DIR="$GITHUB_WORKSPACE/$CONFIG"
-        KERNEL_PLATFORM="$CONFIG_DIR/kernel_platform"
-        COMMON="$KERNEL_PLATFORM/common"
         OUT="$COMMON/out"
         UNAME=$(ls "$OUT/lib/modules/")
         DLKM_STAGING_DIR="$OUT/system_dlkm_staging"
@@ -1112,8 +1111,9 @@ runs:
             --partition_name system_dlkm \
             --image "$OUT/system_dlkm.img"
 
-        cp "$OUT/system_dlkm.img" "$CONFIG_DIR/artifacts/"
-        cp "$OUT/system_dlkm.modules.load" "$CONFIG_DIR/artifacts/"
+        cp "$OUT/system_dlkm.img" "$ARTIFACTS_DIR"
+        cp "$OUT/system_dlkm.modules.load" "$ARTIFACTS_DIR"
+        cp "$OUT/system_dlkm.modules.load" "$ARTIFACTS_DIR_DEBUG"
 
     - name: Final Build Summary
       shell: bash
@@ -1168,3 +1168,8 @@ runs:
         name: kernel-${{ env.CONFIG }}
         path: ${{ env.CONFIG }}/artifacts/
 
+    - name: Upload Debug zip
+      uses: actions/upload-artifact@v4
+      with:
+        name: debug-common-${{ env.CONFIG }}
+        path: ${{ env.CONFIG }}/debug/artifacts/
