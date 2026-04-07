@@ -393,6 +393,7 @@ runs:
 
         export PATH="${CLANG_BIN_PATH}:$PATH" 
         export PATH="/usr/lib/ccache:$PATH"
+        export PATH="$KERNEL_PLATFORM/build/build-tools/path/linux-x86:$PATH"
 
         MAKE_FLAGS+=(
           LLVM=1
@@ -415,7 +416,10 @@ runs:
         )
 
         OUT=out
-        INSTALL_MOD_PATH="$MSM/out"
+        INSTALL_MOD_PATH="$MSM/$OUT"
+        INSTALL_DTBS_PATH="$MSM/$OUT/dtbs_staging"
+        DTB_TYPES="$SOC-overlays-"
+
         mkdir -p "$OUT"
         make "${MAKE_FLAGS[@]}" O="$OUT" gki_defconfig
         
@@ -434,6 +438,7 @@ runs:
         make "${MAKE_FLAGS[@]}" O=$OUT olddefconfig
         make -j$(nproc --all) "${MAKE_FLAGS[@]}" O="$OUT" modules dtbs
         make -j$(nproc --all) "${MAKE_FLAGS[@]}" O="$OUT" INSTALL_MOD_STRIP=1 INSTALL_MOD_PATH="$INSTALL_MOD_PATH" modules_install
+        make -j$(nproc --all) "${MAKE_FLAGS[@]}" O="$OUT" INSTALL_DTBS_PATH="$INSTALL_DTBS_PATH" DTB_TYPES="$DTB_TYPES" dtbs_install
 
         cd "$KERNEL_PLATFORM"
 
