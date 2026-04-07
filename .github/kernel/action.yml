@@ -887,6 +887,7 @@ runs:
         fi
 
         export PATH="/usr/lib/ccache:$PATH"
+        export PATH="$KERNEL_PLATFORM/build/build-tools/path/linux-x86:$PATH"
 
         MAKE_FLAGS+=(
           LLVM=1
