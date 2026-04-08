@@ -738,6 +738,13 @@ runs:
         ./scripts/config --file arch/arm64/configs/gki_defconfig \
           --enable CONFIG_LRU_GEN_ENABLED
 
+        # Add for Droidspaces support
+        ./scripts/config --file arch/arm64/configs/gki_defconfig \
+          --enable CONFIG_SYSVIPC \
+          --enable CONFIG_DEVTMPFS \
+          --enable CONFIG_PID_NS \
+          --enable CONFIG_POSIX_MQUEUE
+
         echo "Other configs added ✅"
         echo "::endgroup::"
 
