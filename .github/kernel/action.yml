@@ -945,6 +945,10 @@ runs:
         make -j$(nproc --all) "${MAKE_FLAGS[@]}" KCFLAGS="$KCFLAGS" KCPPFLAGS="$KCPPFLAGS" O="$OUT" Image modules
         make -j$(nproc --all) "${MAKE_FLAGS[@]}" O="$OUT" INSTALL_MOD_STRIP=1 INSTALL_MOD_PATH="$INSTALL_MOD_PATH" modules_install
 
+        cp "$OUT/vmlinux" "$ARTIFACTS_DIR_DEBUG"
+        cp "$OUT/System.map" "$ARTIFACTS_DIR_DEBUG"
+        cp "$OUT/Module.symvers" "ARTIFACTS_DIR_DEBUG"
+
         IMG="$OUT/arch/arm64/boot/Image"
         if [ ! -f "$IMG" ]; then
           echo "Kernel Image missing"
