@@ -953,6 +953,10 @@ runs:
         fi
         sha256sum "$IMG" | tee "$OUT/Image.sha256"
         echo "Kernel built 😆"
+
+        cp "$OUT/System.map" "$ARTIFACTS_DIR_DEBUG"
+        cp "$OUT/Module.symvers" "$ARTIFACTS_DIR_DEBUG"
+
         echo "::endgroup::"
 
     - name: Collect Build Stats / Validate Image
