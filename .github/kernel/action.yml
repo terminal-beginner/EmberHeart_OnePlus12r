@@ -592,7 +592,7 @@ runs:
         echo "::endgroup::"
 
     - name: Add my kernel patches to common kernel
-      if: env.SOC == 'kalama'
+      if: env.SOC == 'kalama' && !contains(inputs.manifest, 'CUSTOM')
       shell: bash
       run: |
         set -euo pipefail
@@ -608,7 +608,7 @@ runs:
         echo "::endgroup::"
 
     - name: Add other kernel patches to common kernel
-      if: env.SOC == 'kalama'
+      if: env.SOC == 'kalama' && !contains(inputs.manifest, 'CUSTOM')
       shell: bash
       run: |
         set -euo pipefail

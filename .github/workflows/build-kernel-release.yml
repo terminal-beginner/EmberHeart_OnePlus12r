@@ -26,7 +26,6 @@ on:
           - FAST_BUILD_OOS15
           - OOS16
           - OOS16_CUSTOM
-          - OOS16_CUSTOM_V2
         default: OOS16_CUSTOM
       ksun_branch:
         description: 'Enter KernelSU Next Branch or commit hash (blank for stable tag)'
@@ -50,7 +49,7 @@ on:
       vendor_branch_or_commit:
         description: 'Enter vendor modules and device tree branch or commit hash'
         type: string
-        default: ''
+        default: 'oneplus/sm8550_b_16.0.0_oneplus_11'
       model:
         description: 'Select device to be built'
         required: true
