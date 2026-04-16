@@ -27,6 +27,11 @@ on:
           - OOS16
           - OOS16_CUSTOM
         default: OOS16_CUSTOM
+      use_susfs:
+        description: 'Do you want to add susfs in kernel?'
+        required: true
+        type: boolean
+        default: true
       ksun_branch:
         description: 'Enter KernelSU Next Branch or commit hash (blank for stable tag)'
         required: true
@@ -50,6 +55,14 @@ on:
         description: 'Enter vendor modules and device tree branch or commit hash'
         type: string
         default: 'oneplus/sm8550_b_16.0.0_oneplus_11'
+      common_branch_or_commit:
+        description: 'Enter COMMON kernel branch or commit hash'
+        type: string
+        default: ''
+      msm_branch_or_commit:
+        description: 'Enter MSM kernel branch or commit hash'
+        type: string
+        default: ''
       model:
         description: 'Select device to be built'
         required: true
@@ -133,10 +146,12 @@ jobs:
         with:
           op_config_json: ${{ toJSON(matrix) }}
           ksun_branch_or_hash: ${{ inputs.ksun_branch }}
+          use_susfs: ${{ inputs.use_susfs }}
           susfs_commit_hash_or_branch: ${{ inputs.susfs_branch_or_commit }}
           optimize_level: ${{ inputs.optimize_level }}
           kernel_uname: ${{ inputs.kernel_uname }}
           manifest: ${{ inputs.manifest }}
+          common_branch_or_commit: ${{ inputs.common_branch_or_commit }}
 
   build-kernel-modules:
     name: Build ${{ matrix.model }} Kernel Modules
@@ -162,6 +177,7 @@ jobs:
           op_config_json: ${{ toJSON(matrix) }}
           manifest: ${{ inputs.manifest }}
           vendor_branch_or_commit: ${{ inputs.vendor_branch_or_commit }}
+          msm_branch_or_commit: ${{ inputs.msm_branch_or_commit }}
 
   trigger-release:
     needs:

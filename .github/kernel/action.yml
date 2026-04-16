@@ -13,6 +13,11 @@ inputs:
     required: true
     type: string
     default: ""
+  use_susfs:
+    description: 'Do you want to add susfs in kernel?'
+    required: false
+    type: string
+    default: 'false'
   susfs_commit_hash_or_branch:
     required: false
     type: string
@@ -29,6 +34,10 @@ inputs:
     required: true
     type: string
     default: OOS15
+  common_branch_or_commit:
+    required: false
+    type: string
+    default: ""
 
 outputs:
   kernel_version:
@@ -206,9 +215,9 @@ runs:
         if [[ "$MANIFEST" == https://* ]]; then
           mkdir -p .repo/manifests
           curl --fail --show-error --location --proto '=https' "$MANIFEST" -o .repo/manifests/temp_manifest.xml
-          "$REPO" init -u https://github.com/OnePlusOSS/kernel_manifest.git -b oneplus/sm8650 -m temp_manifest.xml --repo-rev=v2.16 --depth=1 --no-clone-bundle --no-tags
+          "$REPO" init -u https://github.com/OnePlusOSS/kernel_manifest.git -b oneplus/sm8650 -m temp_manifest.xml --repo-rev=stable --depth=1 --no-clone-bundle --no-tags
         else
-          "$REPO" init -u https://github.com/OnePlusOSS/kernel_manifest.git -b "$BRANCH" -m "$MANIFEST" --repo-rev=v2.16 --depth=1 --no-clone-bundle --no-tags
+          "$REPO" init -u https://github.com/OnePlusOSS/kernel_manifest.git -b "$BRANCH" -m "$MANIFEST" --repo-rev=stable --depth=1 --no-clone-bundle --no-tags
         fi
         "$REPO" --version
         success=false
@@ -222,6 +231,23 @@ runs:
           sleep 30
         done
         $success || { echo "repo sync failed after 3 attempts"; exit 1; }
+
+    - name: Checkout custom branch or commit hash for sources
+      shell: bash
+      run: |
+        set -euo pipefail
+
+        cd "$COMMON"
+        if [[ -z "${{ inputs.common_branch_or_commit }}" ]]; then
+          echo "Custom branch or commit not specified, proceeding on current HEAD of common kernel "
+          echo "Current HEAD for COMMON kernel repo is at:"
+          git show HEAD --no-patch
+        else
+          git fetch --all --depth=1
+          git checkout "${{ inputs.common_branch_or_commit }}"
+          echo "Current HEAD for COMMON kernel repo is at:"
+          git show HEAD --no-patch
+        fi
 
     - name: Get Kernel Version Info
       shell: bash
@@ -290,16 +316,24 @@ runs:
         set -euo pipefail
         echo "Cloning AnyKernel3 and other dependencies..."
         ANYKERNEL_BRANCH="gki-2.0"
+
+        echo "Using AnyKernel3 branch: $ANYKERNEL_BRANCH"
+        git clone --depth=1 https://github.com/TheWildJames/AnyKernel3.git -b "$ANYKERNEL_BRANCH"
+        git clone --depth=1 https://github.com/TheWildJames/kernel_patches.git
+        git clone --depth=1 https://github.com/nullptr-t-oss/kernel_patches.git my_patches
+
+    - name: Clone susfs
+      if: ${{ inputs.use_susfs == 'true' }}
+      shell: bash
+      run: |
+        set -euo pipefail
+
         if [[ -z "${{ inputs.susfs_commit_hash_or_branch }}" ]]; then
           SUSFS_BRANCH="${{ env.SUSFS_KERNEL_BRANCH }}"
         else
           SUSFS_BRANCH="${{ inputs.susfs_commit_hash_or_branch }}"
         fi
-        echo "Using AnyKernel3 branch: $ANYKERNEL_BRANCH"
         echo "Using SUSFS branch: $SUSFS_BRANCH"
-        git clone --depth=1 https://github.com/TheWildJames/AnyKernel3.git -b "$ANYKERNEL_BRANCH"
-        git clone --depth=1 https://github.com/TheWildJames/kernel_patches.git
-        git clone --depth=1 https://github.com/nullptr-t-oss/kernel_patches.git my_patches
         git clone https://gitlab.com/simonpunk/susfs4ksu.git
         cd susfs4ksu
         if git rev-parse --verify "origin/$SUSFS_BRANCH" >/dev/null 2>&1 || git rev-parse --verify "$SUSFS_BRANCH" >/dev/null 2>&1; then
@@ -362,6 +396,7 @@ runs:
         echo "::endgroup::"
 
     - name: Apply SUSFS Patches
+      if: ${{ inputs.use_susfs == 'true' }}
       shell: bash
       run: |
         set -euo pipefail
@@ -545,16 +580,31 @@ runs:
         cd "$COMMON"
         patch -p1 < $WILD_KERNEL_PATCHES/next/scope_min_manual_hooks_v1.4.patch
 
-    - name: Add KernelSU-Next and SUSFS Configuration Settings
+    - name: Add KernelSU-Next Configuration Settings
       shell: bash
       run: |
         set -euo pipefail
-        echo "::group::Adding KernelSU and SUSFS configs..."
+        echo "::group::Adding KernelSU configs..."
         cd "$COMMON"
 
         ./scripts/config --file arch/arm64/configs/gki_defconfig \
           --enable CONFIG_KSU \
           --disable CONFIG_KSU_KPROBES_HOOK \
+          --enable CONFIG_TMPFS_XATTR \
+          --enable CONFIG_TMPFS_POSIX_ACL
+
+        echo "KernelSU and SUSFS configuration added ✅"
+        echo "::endgroup::"
+
+    - name: Add SUSFS Configuration Settings
+      if: ${{ inputs.use_susfs == 'true' }}
+      shell: bash
+      run: |
+        set -euo pipefail
+        echo "::group::Adding SUSFS configs..."
+        cd "$COMMON"
+
+        ./scripts/config --file arch/arm64/configs/gki_defconfig \
           --enable CONFIG_KSU_SUSFS \
           --enable CONFIG_KSU_SUSFS_HAS_MAGIC_MOUNT \
           --enable CONFIG_KSU_SUSFS_SUS_PATH \
@@ -571,12 +621,7 @@ runs:
           --enable CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG \
           --enable CONFIG_KSU_SUSFS_OPEN_REDIRECT \
           --enable CONFIG_KSU_SUSFS_SUS_MAP \
-          --disable CONFIG_KSU_SUSFS_SUS_SU \
-          --enable CONFIG_TMPFS_XATTR \
-          --enable CONFIG_TMPFS_POSIX_ACL
-
-        echo "KernelSU and SUSFS configuration added ✅"
-        echo "::endgroup::"
+          --disable CONFIG_KSU_SUSFS_SUS_SU
 
     - name: Add Oneplus BBR
       shell: bash
@@ -1032,7 +1077,11 @@ runs:
         sed -i '7 c\kernel.string=EmberHeart Kernel by nullptr-t-oss' anykernel.sh
         curl -s https://raw.githubusercontent.com/nullptr-t-oss/kernel_patches/refs/heads/main/banner > banner
 
-        ZIP_NAME="AnyKernel3_${MODEL}_${{ inputs.optimize_level }}_${{ env.KERNEL_FULL_VER }}_Next_${KSUVER}_SuSFS_${SUSVER}.zip"
+        if [ "${{ inputs.use_susfs }}" = "true" ]; then
+          ZIP_NAME="AnyKernel3_${MODEL}_${{ inputs.optimize_level }}_${{ env.KERNEL_FULL_VER }}_Next_${KSUVER}_SuSFS_${SUSVER}.zip"
+        else
+          ZIP_NAME="AnyKernel3_${MODEL}_${{ inputs.optimize_level }}_${{ env.KERNEL_FULL_VER }}_Next_${KSUVER}.zip"
+        fi
 
         echo "Creating flashable zip: $ZIP_NAME"
         ( cd "$GITHUB_WORKSPACE/AnyKernel3" && zip -r "$ARTIFACTS_DIR/$ZIP_NAME" ./* >/dev/null )

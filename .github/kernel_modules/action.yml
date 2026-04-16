@@ -21,6 +21,10 @@ inputs:
     required: false
     type: string
     default: ""
+  msm_branch_or_commit:
+    required: false
+    type: string
+    default: ""
 
 runs:
   using: composite
@@ -177,9 +181,9 @@ runs:
         if [[ "$MANIFEST" == https://* ]]; then
           mkdir -p .repo/manifests
           curl --fail --show-error --location --proto '=https' "$MANIFEST" -o .repo/manifests/temp_manifest.xml
-          "$REPO" init -u https://github.com/OnePlusOSS/kernel_manifest.git -b oneplus/sm8650 -m temp_manifest.xml --repo-rev=v2.16 --depth=1 --no-clone-bundle --no-tags
+          "$REPO" init -u https://github.com/OnePlusOSS/kernel_manifest.git -b oneplus/sm8650 -m temp_manifest.xml --repo-rev=stable --depth=1 --no-clone-bundle --no-tags
         else
-          "$REPO" init -u https://github.com/OnePlusOSS/kernel_manifest.git -b "$BRANCH" -m "$MANIFEST" --repo-rev=v2.16 --depth=1 --no-clone-bundle --no-tags
+          "$REPO" init -u https://github.com/OnePlusOSS/kernel_manifest.git -b "$BRANCH" -m "$MANIFEST" --repo-rev=stable --depth=1 --no-clone-bundle --no-tags
         fi
         "$REPO" --version
         success=false
@@ -193,6 +197,35 @@ runs:
           sleep 30
         done
         $success || { echo "repo sync failed after 3 attempts"; exit 1; }
+
+    - name: Checkout custom branch or commit hash for sources
+      shell: bash
+      run: |
+        set -euo pipefail
+
+        cd "$CONFIG"
+        if [[ -z "${{ inputs.vendor_branch_or_commit }}" ]]; then
+          echo "Custom branch or commit not specified, proceeding on current HEAD of vendor modules and device tree branch"
+          echo "Current HEAD for vendor modules repo is at:"
+          git show HEAD --no-patch
+        else
+          git fetch --all --depth=1
+          git checkout "${{ inputs.vendor_branch_or_commit }}"
+          echo "Current HEAD for vendor modules repo is at:"
+          git show HEAD --no-patch
+        fi
+        
+        cd "$MSM"
+        if [[ -z "${{ inputs.msm_branch_or_commit }}" ]]; then
+          echo "Custom branch or commit not specified, proceeding on current HEAD of msm kernel"
+          echo "Current HEAD for MSM kernel repo is at:"
+          git show HEAD --no-patch
+        else
+          git fetch --all --depth=1
+          git checkout "${{ inputs.msm_branch_or_commit }}"
+          echo "Current HEAD for MSM kernel repo is at:"
+          git show HEAD --no-patch
+        fi
 
     - name: Get Kernel Version Info
       shell: bash
@@ -250,22 +283,6 @@ runs:
         cd "$CONFIG/kernel_platform"
         rm -f msm-kernel/android/abi_gki_protected_exports_* || true
         df -h
-
-    - name: Checkout custom vendor modules and device tree branch
-      shell: bash
-      run: |
-        set -euo pipefail
-        cd "$CONFIG"
-
-        # NOTE : we used depth 1 in repo sync so git doesn't know about other branches , so git fetch first
-        # TODO : for now I'm keeping remote as all but add a option for that in future??? because fetch all fetches all remotes including OnePlusOSS and Linaro; also instead remove depth 1 from repo sync???
-        git fetch --all --depth=1
-
-        if [[ -z "${{ inputs.vendor_branch_or_commit }}" ]]; then
-          echo "Custom branch or commit not specified, proceeding on default vendor modules and device tree branch"
-        else
-          git checkout "${{ inputs.vendor_branch_or_commit }}"
-        fi
 
     - name: Merge vendor fragments
       shell: bash
