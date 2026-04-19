@@ -563,15 +563,13 @@ runs:
         set -euo pipefail
         echo "::group::Adding BBG"
         cd "$KERNEL_PLATFORM"
-        if ! wget -O- https://github.com/vc-teahouse/Baseband-guard/raw/main/setup.sh | bash -s fix_blkdev_rename; then
+        echo "Adding BBG..."
+        if ! wget -O- https://github.com/vc-teahouse/Baseband-guard/raw/main/setup.sh | bash -s main; then
           echo "::warning::BBG setup script failed, continuing anyway"
         fi
-        cd common
+        cd "$COMMON"
         ./scripts/config --file arch/arm64/configs/gki_defconfig --enable CONFIG_BBG
-        sed -i '/^config LSM$/,/^help$/{ /^[[:space:]]*default/ { /baseband_guard/! s/selinux/selinux,baseband_guard/ } }' security/Kconfig
-        # cd ./KernelSU-Next
-        # echo "Patching BBG Enhanced Security!"
-        # patch -p1 --forward < "$WILD_KERNEL_PATCHES/common/bbg_untrusted_cred.patch"
+        sed -i '/^config LSM$/,/^help$/{ /^[[:space:]]*default/ { /baseband_guard/! s/selinux/selinux,baseband_guard/ } }' common/security/Kconfig
         echo "BBG LSM added ✅"
         echo "::endgroup::"
 
