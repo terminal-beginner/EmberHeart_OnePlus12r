@@ -260,20 +260,20 @@ runs:
           echo "Error: No BRANCH= found"; exit 1
         fi
         BRANCH_VALUE="${BRANCH_LINE#*=}"
-        ANDROID_VERSION="${BRANCH_VALUE%-*}"
-        if [ -z "$ANDROID_VERSION" ]; then
+        ANDROID_RELEASE="${BRANCH_VALUE%-*}"
+        if [ -z "$ANDROID_RELEASE" ]; then
           echo "Could not parse android version from BRANCH=$BRANCH_VALUE"
           exit 1
         fi
-        VERSION=$(grep '^VERSION *=' Makefile | awk '{print $3}')
-        PATCHLEVEL=$(grep '^PATCHLEVEL *=' Makefile | awk '{print $3}')
-        SUBLEVEL=$(grep '^SUBLEVEL *=' Makefile | awk '{print $3}')
-        FULL_VERSION="$VERSION.$PATCHLEVEL.$SUBLEVEL"
+        KERNEL_VERSION=$(make kernelversion)
+        VERSION=$(echo $KERNEL_VERSION | cut -d'.' -f1)
+        PATCHLEVEL=$(echo $KERNEL_VERSION | cut -d'.' -f2)
+        SUBLEVEL=$(echo $KERNEL_VERSION | cut -d'.' -f3)
         cd "$ARTIFACTS_DIR"
-        echo "ANDROID_VER=$ANDROID_VERSION" >> "$GITHUB_ENV"
+        echo "ANDROID_RELEASE=$ANDROID_RELEASE" >> "$GITHUB_ENV"
         echo "KERNEL_VER=$VERSION.$PATCHLEVEL" >> "$GITHUB_ENV"
-        echo "KERNEL_FULL_VER=$ANDROID_VERSION-$FULL_VERSION" >> "$GITHUB_ENV"
-        echo "SUSFS_KERNEL_BRANCH=gki-$ANDROID_VERSION-$VERSION.$PATCHLEVEL" >> "$GITHUB_ENV"
+        echo "KERNEL_FULL_VER=$ANDROID_RELEASE-$KERNEL_VERSION" >> "$GITHUB_ENV"
+        echo "SUSFS_KERNEL_BRANCH=gki-$ANDROID_RELEASE-$VERSION.$PATCHLEVEL" >> "$GITHUB_ENV"
 
     - name: Setup ccache
       uses: hendrikmuhs/ccache-action@v1.2.19
