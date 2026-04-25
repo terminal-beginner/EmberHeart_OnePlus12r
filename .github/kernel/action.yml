@@ -260,7 +260,7 @@ runs:
       uses: nullptr-t-oss/turbo-repo-sync@main
       with:
         manifest_path: ${{ env.MANIFEST }}
-        workspace_dir: '$CONFIG'
+        workspace_dir: ${{ env.CONFIG_DIR }}
         project_overrides: ${{ env.PROJECT_OVERRIDE }}
 
     - name: Optimize Global Git for Repo Tool
