@@ -222,7 +222,7 @@ runs:
       run: |
         set -euo pipefail
         echo "Cloning kernel patches for msm kernel..."
-        git clone --depth=1 https://github.com/nullptr-t-oss/kernel_patches.git my_patches
+        git clone --depth=1 https://github.com/terminal-beginner/kernel_patches.git my_patches
 
     - name: Clean Up ABI Protected Exports
       shell: bash
@@ -475,7 +475,7 @@ runs:
         echo "Removing unnecessary modules..."
         cd modules
         # Download default module list
-        curl -L -o default_modules.txt https://raw.githubusercontent.com/nullptr-t-oss/kernel_patches/refs/heads/main/default_modules.txt
+        curl -L -o default_modules.txt https://raw.githubusercontent.com/terminal-beginner/kernel_patches/refs/heads/main/default_modules.txt
         # Remove modules in the default list
 
         while IFS= read -r module; do
