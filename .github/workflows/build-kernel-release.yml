@@ -35,6 +35,11 @@ on:
           - OOS16
           - OOS16_CUSTOM
         default: OOS16_CUSTOM
+      evict_unused_ccache:
+        description: 'Do you want to use evict unused ccache?'
+        required: true
+        type: boolean
+        default: true
       use_custom_repo_parser:
         description: 'Do you want to use custom repo parser?'
         required: true
@@ -193,6 +198,7 @@ jobs:
         with:
           op_config_json: ${{ toJSON(matrix) }}
           ksun_branch_or_hash: ${{ inputs.ksun_branch }}
+          evict_unused_ccache: ${{ inputs.evict_unused_ccache }}
           use_custom_repo_parser: ${{ inputs.use_custom_repo_parser }}
           use_opt_patches: ${{ inputs.use_opt_patches }}
           use_susfs: ${{ inputs.use_susfs }}
@@ -244,6 +250,7 @@ jobs:
         with:
           op_config_json: ${{ toJSON(matrix) }}
           manifest: ${{ inputs.manifest }}
+          evict_unused_ccache: ${{ inputs.evict_unused_ccache }}
           use_custom_repo_parser: ${{ inputs.use_custom_repo_parser }}
           vendor_branch_or_commit: ${{ inputs.vendor_branch_or_commit }}
           msm_branch_or_commit: ${{ inputs.msm_branch_or_commit }}

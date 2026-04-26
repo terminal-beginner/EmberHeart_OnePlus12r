@@ -17,6 +17,11 @@ inputs:
     required: true
     type: string
     default: OOS15
+  evict_unused_ccache:
+    description: 'Do you want to evict unused ccache?'
+    required: true
+    type: string
+    default: 'false'
   use_custom_repo_parser:
     description: 'Do you want to use custom repo parser?'
     required: true
@@ -1001,8 +1006,10 @@ runs:
         # Evict untouched ccache contents
         ccache_end=$(date +%s)
         ccache_delta=$(( ccache_end - ccache_start ))
-        echo "[DEBUG] Deleting ccache contents older than $ccache_delta seconds"
-        ccache --evict-older-than "${ccache_delta}s"
+        if [[ "${{ inputs.evict_unused_ccache }}" == "true" ]]; then
+          echo "[DEBUG] Deleting ccache contents older than $ccache_delta seconds"
+          ccache --evict-older-than "${ccache_delta}s"
+        fi
 
         echo "[WARNING] Deleting old LTO cache"
         gh cache delete LTO-${{ env.MODEL }}-modules-${{ inputs.optimize_level }}-${{ env.KERNEL_FULL_VER }} || true
