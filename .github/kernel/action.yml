@@ -669,6 +669,7 @@ runs:
       run: |
         set -euo pipefail
         echo "::group::"
+        cd "$COMMON"
         KERNEL_VERSION="${{ env.KERNEL_VER }}"
         MIN_VERSION="5.16"
         if [ "$(printf '%s\n' "$KERNEL_VERSION" "$MIN_VERSION" | sort -V | head -n1)" = "$KERNEL_VERSION" ]; then
