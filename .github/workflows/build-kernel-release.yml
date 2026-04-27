@@ -34,7 +34,7 @@ on:
           - OOS15
           - OOS16
           - OOS16_CUSTOM
-        default: OOS16_CUSTOM
+        default: OOS16
       evict_unused_ccache:
         description: 'Do you want to use evict unused ccache?'
         required: true
@@ -77,7 +77,7 @@ on:
       vendor_branch_or_commit:
         description: 'Enter vendor modules and device tree branch or commit hash'
         type: string
-        default: 'oneplus/sm8550_b_16.0.0_oneplus_11'
+        default: 'oneplus/sm8550_b_16.0.0_oneplus_12r'
       common_branch_or_commit:
         description: 'Enter COMMON kernel branch or commit hash'
         type: string
@@ -97,7 +97,9 @@ on:
         type: choice
         options:
           - OP11
-        default: OP11
+          - OP11r
+          -OPAce3
+        default: OP12r
 
 jobs:
   set-op-model:
