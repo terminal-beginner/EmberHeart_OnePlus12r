@@ -97,7 +97,7 @@ on:
         type: choice
         options:
           - OP11
-          - OP11r
+          - OP12r
           - OPAce3
         default: OP12r
 
