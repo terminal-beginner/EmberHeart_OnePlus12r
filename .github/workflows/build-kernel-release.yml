@@ -98,7 +98,7 @@ on:
         options:
           - OP11
           - OP11r
-          -OPAce3
+          - OPAce3
         default: OP12r
 
 jobs:
