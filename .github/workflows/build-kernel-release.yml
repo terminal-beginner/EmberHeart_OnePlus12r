@@ -96,8 +96,8 @@ on:
         required: true
         type: choice
         options:
-          - OP11
-        default: OP11
+          - OPAce3
+        default: OPAce3
 
 jobs:
   set-op-model:
