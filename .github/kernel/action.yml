@@ -804,8 +804,8 @@ runs:
         fi
 
         # minimise_wakeup_time.patch
-        if grep -q "minimise_wakeup" kernel/time/timer.c 2>/dev/null; then
-          echo "✅ minimise_wakeup_time.patch already applied, skipping"
+        if grep -q "alarmtimer" kernel/time/alarmtimer.c 2>/dev/null; then
+           echo "✅ minimise_wakeup_time.patch already applied, skipping"
         else
           patch -p1 --forward < "$WILD_KERNEL_PATCHES/common/minimise_wakeup_time.patch"
         fi
