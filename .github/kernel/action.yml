@@ -782,7 +782,6 @@ runs:
         echo "::endgroup::"
 
     - name: Add other kernel patches to common kernel
-      if- name: Add other kernel patches to common kernel
       if: ${{ inputs.use_opt_patches == 'true' }}
       shell: bash
       run: |
