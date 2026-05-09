@@ -810,9 +810,9 @@ runs:
           patch -p1 --forward < "$WILD_KERNEL_PATCHES/common/minimise_wakeup_time.patch"
         fi
 
-        # int_sqrt.patch
-        if grep -q "int_sqrt" lib/int_sqrt.c 2>/dev/null; then
-          echo "✅ int_sqrt.patch already applied, skipping"
+        # int_sqrt.patch - check for the function that this patch adds/modifies
+        if grep -q "unsigned long int_sqrt" lib/math/int_sqrt.c 2>/dev/null; then
+           echo "✅ int_sqrt.patch already applied, skipping"
         else
           patch -p1 --forward < "$WILD_KERNEL_PATCHES/common/int_sqrt.patch"
         fi
