@@ -789,152 +789,30 @@ runs:
         echo "::group::Applying patches from wild kernels..."
         cd "$COMMON"
 
-        # mem_opt_prefetch.patch
-        if grep -q "prfm.*pldl1strm" arch/arm64/lib/copy_template.S 2>/dev/null; then
-          echo "✅ mem_opt_prefetch.patch already applied, skipping"
-        else
-          patch -p1 --forward < "$WILD_KERNEL_PATCHES/common/mem_opt_prefetch.patch"
-        fi
+        patch -p1 --forward < "$WILD_KERNEL_PATCHES/common/mem_opt_prefetch.patch"
 
-        # optimise_memcmp.patch
-        if grep -q "SYM_FUNC_START_WEAK_PI(memcmp)" arch/arm64/lib/memcmp.S 2>/dev/null; then
-          echo "✅ optimise_memcmp.patch already applied, skipping"
-        else
-          sed -e 's/SYM_FUNC_START(__pi_memcmp)/SYM_FUNC_START_WEAK_PI(memcmp)/' -e 's/SYM_FUNC_END(__pi_memcmp)/SYM_FUNC_END_PI(memcmp)/' -e 's/SYM_FUNC_ALIAS_WEAK(memcmp, __pi_memcmp)/EXPORT_SYMBOL_NOKASAN(memcmp)/' "$WILD_KERNEL_PATCHES/common/optimise_memcmp.patch" | patch -p1 --forward
-        fi
+        sed -e 's/SYM_FUNC_START(__pi_memcmp)/SYM_FUNC_START_WEAK_PI(memcmp)/' -e 's/SYM_FUNC_END(__pi_memcmp)/SYM_FUNC_END_PI(memcmp)/' -e 's/SYM_FUNC_ALIAS_WEAK(memcmp, __pi_memcmp)/EXPORT_SYMBOL_NOKASAN(memcmp)/' "$WILD_KERNEL_PATCHES/common/optimise_memcmp.patch" | patch -p1 --forward
 
-        # minimise_wakeup_time.patch
-        if grep -q "alarmtimer" kernel/time/alarmtimer.c 2>/dev/null; then
-           echo "✅ minimise_wakeup_time.patch already applied, skipping"
-        else
-          patch -p1 --forward < "$WILD_KERNEL_PATCHES/common/minimise_wakeup_time.patch"
-        fi
+        patch -p1 --forward < "$WILD_KERNEL_PATCHES/common/minimise_wakeup_time.patch"
+        patch -p1 --forward < "$WILD_KERNEL_PATCHES/common/int_sqrt.patch"
+        patch -p1 --forward < "$WILD_KERNEL_PATCHES/common/force_tcp_nodelay.patch"
+        patch -p1 --forward < "$WILD_KERNEL_PATCHES/common/reduce_gc_thread_sleep_time.patch"
+        patch -p1 --forward < "$WILD_KERNEL_PATCHES/common/add_timeout_wakelocks_globally.patch"
+        patch -p1 --forward < "$WILD_KERNEL_PATCHES/common/f2fs_reduce_congestion.patch"
+        patch -p1 --forward < "$WILD_KERNEL_PATCHES/common/reduce_freeze_timeout.patch"
 
-        # int_sqrt.patch - check for the function that this patch adds/modifies
-        if grep -q "unsigned long int_sqrt" lib/math/int_sqrt.c 2>/dev/null; then
-           echo "✅ int_sqrt.patch already applied, skipping"
-        else
-          patch -p1 --forward < "$WILD_KERNEL_PATCHES/common/int_sqrt.patch"
-        fi
-
-        # force_tcp_nodelay.patch
-        if grep -q "force_tcp_nodelay" net/ipv4/tcp.c 2>/dev/null; then
-          echo "✅ force_tcp_nodelay.patch already applied, skipping"
-        else
-          patch -p1 --forward < "$WILD_KERNEL_PATCHES/common/force_tcp_nodelay.patch"
-        fi
-
-        # reduce_gc_thread_sleep_time.patch
-        if grep -q "reduce_gc_thread_sleep" mm/page-writeback.c 2>/dev/null; then
-          echo "✅ reduce_gc_thread_sleep_time.patch already applied, skipping"
-        else
-          patch -p1 --forward < "$WILD_KERNEL_PATCHES/common/reduce_gc_thread_sleep_time.patch"
-        fi
-
-        # add_timeout_wakelocks_globally.patch
-        if grep -q "timeout_wakelocks" kernel/power/wakelock.c 2>/dev/null; then
-          echo "✅ add_timeout_wakelocks_globally.patch already applied, skipping"
-        else
-          patch -p1 --forward < "$WILD_KERNEL_PATCHES/common/add_timeout_wakelocks_globally.patch"
-        fi
-
-        # f2fs_reduce_congestion.patch
-        if grep -q "f2fs_reduce_congestion" fs/f2fs/data.c 2>/dev/null; then
-          echo "✅ f2fs_reduce_congestion.patch already applied, skipping"
-        else
-          patch -p1 --forward < "$WILD_KERNEL_PATCHES/common/f2fs_reduce_congestion.patch"
-        fi
-
-        # reduce_freeze_timeout.patch
-        if grep -q "reduce_freeze_timeout" fs/super.c 2>/dev/null; then
-          echo "✅ reduce_freeze_timeout.patch already applied, skipping"
-        else
-          patch -p1 --forward < "$WILD_KERNEL_PATCHES/common/reduce_freeze_timeout.patch"
-        fi
-
-        # add_limitation_scaling_min_freq.patch
-        if grep -q "limitation_scaling_min_freq" drivers/cpufreq/cpufreq.c 2>/dev/null; then
-          echo "✅ add_limitation_scaling_min_freq.patch already applied, skipping"
-        else
-          patch -p1 -F3 --forward < "$WILD_KERNEL_PATCHES/common/add_limitation_scaling_min_freq.patch"
-        fi
-
-        # re_write_limitation_scaling_min_freq.patch
-        if grep -q "re_write_limitation_scaling" drivers/cpufreq/cpufreq.c 2>/dev/null; then
-          echo "✅ re_write_limitation_scaling_min_freq.patch already applied, skipping"
-        else
-          patch -p1 -F3 --forward < "$WILD_KERNEL_PATCHES/common/re_write_limitation_scaling_min_freq.patch"
-        fi
-
-        # adjust_cpu_scan_order.patch
-        if grep -q "adjust_cpu_scan_order" kernel/sched/core.c 2>/dev/null; then
-          echo "✅ adjust_cpu_scan_order.patch already applied, skipping"
-        else
-          patch -p1 -F3 --forward < "$WILD_KERNEL_PATCHES/common/adjust_cpu_scan_order.patch"
-        fi
-
-        # avoid_extra_s2idle_wake_attempts.patch
-        if grep -q "avoid_extra_s2idle_wake" kernel/power/suspend.c 2>/dev/null; then
-          echo "✅ avoid_extra_s2idle_wake_attempts.patch already applied, skipping"
-        else
-          patch -p1 -F3 --forward < "$WILD_KERNEL_PATCHES/common/avoid_extra_s2idle_wake_attempts.patch"
-        fi
-
-        # disable_cache_hot_buddy.patch
-        if grep -q "disable_cache_hot_buddy" mm/page_alloc.c 2>/dev/null; then
-          echo "✅ disable_cache_hot_buddy.patch already applied, skipping"
-        else
-          patch -p1 -F3 --forward < "$WILD_KERNEL_PATCHES/common/disable_cache_hot_buddy.patch"
-        fi
-
-        # f2fs_enlarge_min_fsync_blocks.patch
-        if grep -q "f2fs_enlarge_min_fsync" fs/f2fs/super.c 2>/dev/null; then
-          echo "✅ f2fs_enlarge_min_fsync_blocks.patch already applied, skipping"
-        else
-          patch -p1 -F3 --forward < "$WILD_KERNEL_PATCHES/common/f2fs_enlarge_min_fsync_blocks.patch"
-        fi
-
-        # increase_ext4_default_commit_age.patch
-        if grep -q "increase_ext4_default_commit" fs/ext4/super.c 2>/dev/null; then
-          echo "✅ increase_ext4_default_commit_age.patch already applied, skipping"
-        else
-          patch -p1 -F3 --forward < "$WILD_KERNEL_PATCHES/common/increase_ext4_default_commit_age.patch"
-        fi
-
-        # increase_sk_mem_packets.patch
-        if grep -q "increase_sk_mem_packets" net/core/sock.c 2>/dev/null; then
-          echo "✅ increase_sk_mem_packets.patch already applied, skipping"
-        else
-          patch -p1 -F3 --forward < "$WILD_KERNEL_PATCHES/common/increase_sk_mem_packets.patch"
-        fi
-
-        # reduce_pci_pme_wakeups.patch
-        if grep -q "reduce_pci_pme_wakeups" drivers/pci/pcie/pme.c 2>/dev/null; then
-          echo "✅ reduce_pci_pme_wakeups.patch already applied, skipping"
-        else
-          patch -p1 -F3 --forward < "$WILD_KERNEL_PATCHES/common/reduce_pci_pme_wakeups.patch"
-        fi
-
-        # silence_irq_cpu_logspam.patch
-        if grep -q "silence_irq_cpu_logspam" kernel/irq/irqdesc.c 2>/dev/null; then
-          echo "✅ silence_irq_cpu_logspam.patch already applied, skipping"
-        else
-          patch -p1 -F3 --forward < "$WILD_KERNEL_PATCHES/common/silence_irq_cpu_logspam.patch"
-        fi
-
-        # silence_system_logspam.patch
-        if grep -q "silence_system_logspam" kernel/printk/printk.c 2>/dev/null; then
-          echo "✅ silence_system_logspam.patch already applied, skipping"
-        else
-          patch -p1 -F3 --forward < "$WILD_KERNEL_PATCHES/common/silence_system_logspam.patch"
-        fi
-
-        # use_unlikely_wrap_cpufreq.patch
-        if grep -q "unlikely_wrap_cpufreq" drivers/cpufreq/cpufreq.c 2>/dev/null; then
-          echo "✅ use_unlikely_wrap_cpufreq.patch already applied, skipping"
-        else
-          patch -p1 -F3 --forward < "$WILD_KERNEL_PATCHES/common/use_unlikely_wrap_cpufreq.patch"
-        fi
+        patch -p1 -F3 --forward < "$WILD_KERNEL_PATCHES/common/add_limitation_scaling_min_freq.patch"
+        patch -p1 -F3 --forward < "$WILD_KERNEL_PATCHES/common/re_write_limitation_scaling_min_freq.patch"
+        patch -p1 -F3 --forward < "$WILD_KERNEL_PATCHES/common/adjust_cpu_scan_order.patch"
+        patch -p1 -F3 --forward < "$WILD_KERNEL_PATCHES/common/avoid_extra_s2idle_wake_attempts.patch"
+        patch -p1 -F3 --forward < "$WILD_KERNEL_PATCHES/common/disable_cache_hot_buddy.patch"
+        patch -p1 -F3 --forward < "$WILD_KERNEL_PATCHES/common/f2fs_enlarge_min_fsync_blocks.patch"
+        patch -p1 -F3 --forward < "$WILD_KERNEL_PATCHES/common/increase_ext4_default_commit_age.patch"
+        patch -p1 -F3 --forward < "$WILD_KERNEL_PATCHES/common/increase_sk_mem_packets.patch"
+        patch -p1 -F3 --forward < "$WILD_KERNEL_PATCHES/common/reduce_pci_pme_wakeups.patch"
+        patch -p1 -F3 --forward < "$WILD_KERNEL_PATCHES/common/silence_irq_cpu_logspam.patch"
+        patch -p1 -F3 --forward < "$WILD_KERNEL_PATCHES/common/silence_system_logspam.patch"
+        patch -p1 -F3 --forward < "$WILD_KERNEL_PATCHES/common/use_unlikely_wrap_cpufreq.patch"
 
         echo "Other kernel patches applied 🔥"
         echo "::endgroup::"
