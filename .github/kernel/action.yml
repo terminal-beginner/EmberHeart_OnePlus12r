@@ -823,9 +823,20 @@ runs:
         apply_patch "$WILD_KERNEL_PATCHES/common/f2fs_reduce_congestion.patch"
         apply_patch "$WILD_KERNEL_PATCHES/common/reduce_freeze_timeout.patch"
     
-        # Patches that need -F3 (fuzz factor)
-        apply_patch "$WILD_KERNEL_PATCHES/common/add_limitation_scaling_min_freq.patch" "-F3"
-        apply_patch "$WILD_KERNEL_PATCHES/common/re_write_limitation_scaling_min_freq.patch" "-F3"
+        # ------------------------------------------------------------
+        # Check if the cpufreq scaling_min_freq_limit feature already exists
+        # (e.g., the struct cpumask_uint_kv or the show/store functions)
+        # ------------------------------------------------------------
+        if grep -q "struct cpumask_uint_kv" drivers/cpufreq/cpufreq.c; then
+            echo "scaling_min_freq_limit feature already present. Skipping the two limit patches."
+        else
+            echo "Applying scaling_min_freq_limit patches..."
+            # Patches that need -F3 (fuzz factor)
+            apply_patch "$WILD_KERNEL_PATCHES/common/add_limitation_scaling_min_freq.patch" "-F3"
+            apply_patch "$WILD_KERNEL_PATCHES/common/re_write_limitation_scaling_min_freq.patch" "-F3"
+        fi
+    
+        # Remaining patches (always applied)
         apply_patch "$WILD_KERNEL_PATCHES/common/adjust_cpu_scan_order.patch" "-F3"
         apply_patch "$WILD_KERNEL_PATCHES/common/avoid_extra_s2idle_wake_attempts.patch" "-F3"
         apply_patch "$WILD_KERNEL_PATCHES/common/disable_cache_hot_buddy.patch" "-F3"
