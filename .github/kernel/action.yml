@@ -749,6 +749,16 @@ runs:
           --enable CONFIG_KSU_SUSFS_SUS_MAP \
           --disable CONFIG_KSU_SUSFS_SUS_SU
 
+    - name: Enable CONFIG_HZ=300
+      shell: bash
+      run: |
+        set -euo pipefail
+        cd "$COMMON"
+        ./scripts/config --file arch/arm64/configs/gki_defconfig \
+          --enable CONFIG_HZ_300 \
+          --disable CONFIG_HZ_250 \
+          --disable CONFIG_HZ_1000
+
     - name: Add Oneplus BBR
       shell: bash
       run: |
