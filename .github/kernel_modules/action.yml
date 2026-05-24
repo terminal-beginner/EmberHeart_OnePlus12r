@@ -12,11 +12,11 @@ inputs:
   optimize_level:
     required: false
     type: string
-    default: O2  # Choices: O2 or O3
+    default: O3  # Choices: O2 or O3
   manifest:
     required: true
     type: string
-    default: OOS15
+    default: OOS16
   evict_unused_ccache:
     description: 'Do you want to evict unused ccache?'
     required: true
