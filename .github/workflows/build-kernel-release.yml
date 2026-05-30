@@ -98,7 +98,8 @@ on:
         options:
           - OP12r
           - OPAce3
-        default: OP12r
+          - OP13r
+        default: OP13r
 
 jobs:
   set-op-model:
