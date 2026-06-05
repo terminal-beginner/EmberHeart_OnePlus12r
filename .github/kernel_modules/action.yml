@@ -38,6 +38,11 @@ runs:
         rm -rf "$CCACHE_DIR/" || true
         rm -rf "$LDCACHE_DIR/" || true
 
+        mkdir -p "$ARTIFACTS_DIR"
+        mkdir -p "$ARTIFACTS_DIR_DEBUG"
+        mkdir -p "$CCACHE_DIR"
+        mkdir -p "$LDCACHE_DIR"
+
     - name: Get Kernel Version Info
       shell: bash
       run: |
