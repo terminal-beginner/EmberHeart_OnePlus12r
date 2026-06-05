@@ -30,6 +30,10 @@ inputs:
     required: false
     type: string
     default: ""
+  optimize_level:
+    required: false
+    type: string
+    default: O2  # Choices: O2 or O3
 
 runs:
   using: composite

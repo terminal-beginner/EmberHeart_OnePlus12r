@@ -201,6 +201,7 @@ jobs:
           common_branch_or_commit: ${{ inputs.common_branch_or_commit }}
           msm_branch_or_commit: ${{ inputs.msm_branch_or_commit }}
           vendor_branch_or_commit: ${{ inputs.vendor_branch_or_commit }}
+          optimize_level: ${{ inputs.optimize_level }}
 
       - name: Build Kernel
         id: build_kernel
