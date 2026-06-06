@@ -928,7 +928,8 @@ runs:
           --enable CONFIG_SYSVIPC \
           --enable CONFIG_DEVTMPFS \
           --enable CONFIG_PID_NS \
-          --enable CONFIG_POSIX_MQUEUE
+          --enable CONFIG_POSIX_MQUEUE \
+          --enable CONFIG_USER_NS
 
         echo "Other configs added ✅"
         echo "::endgroup::"
