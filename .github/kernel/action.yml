@@ -906,8 +906,14 @@ runs:
         SECONDS=0
 
         make "${MAKE_FLAGS[@]}" O="$OUT" olddefconfig
-        make -j$(nproc --all) "${MAKE_FLAGS[@]}"  O="$OUT" Image modules
-        make -j$(nproc --all) "${MAKE_FLAGS[@]}" O="$OUT" INSTALL_MOD_STRIP=1 INSTALL_MOD_PATH="$INSTALL_MOD_PATH" modules_install
+
+        if [[ "$BUILD_TYPE" == "Mixed Build" || "$BUILD_TYPE" == "Modules Only" ]]; then
+          make -j$(nproc --all) "${MAKE_FLAGS[@]}"  O="$OUT" Image modules
+          make -j$(nproc --all) "${MAKE_FLAGS[@]}" O="$OUT" INSTALL_MOD_STRIP=1 INSTALL_MOD_PATH="$INSTALL_MOD_PATH" modules_install
+        else
+          make -j$(nproc --all) "${MAKE_FLAGS[@]}"  O="$OUT" Image
+        fi
+        
 
         echo "duration=$SECONDS" >> "$GITHUB_ENV"
 
@@ -1079,7 +1085,7 @@ runs:
         echo "::endgroup::"
 
     - name: Create system_dlkm Image
-      if: ${{ inputs.compile_dlkm == 'true' }}
+      if: ${{ inputs.compile_dlkm == 'true'  && env.BUILD_TYPE != 'Monolithic Build' }}
       id: create_system_dlkm
       shell: bash
       run: |
