@@ -490,7 +490,7 @@ runs:
         SECONDS=0
 
         for MODULE in "${EXT_QCOM[@]}"; do
-            if [ ! -d "$MODULE"]; then
+            if [ ! -d "$MODULE" ]; then
               echo "[WARNING] The following module path does not exist : $MODULE"
               continue
             fi
