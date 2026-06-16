@@ -947,9 +947,20 @@ runs:
         # Consistent flags; include -pipe and disable stack protector
         KCFLAGS="-pipe ${KCFLAGS_EXTRA}"
 
-        echo '#!/bin/bash' > ld-wrapper
-        echo 'ld.lld "$@" --thinlto-cache-dir=$LDCACHE_DIR --thinlto-jobs=$(nproc --all)' >> ld-wrapper
-        chmod +x ld-wrapper
+        if [ "${{ inputs.lto }}" = "Thin" ]; then 
+          echo '#!/bin/bash' > ld-wrapper
+          echo 'ld.lld "$@" --thinlto-cache-dir=$LDCACHE_DIR --thinlto-jobs=$(nproc --all)' >> ld-wrapper
+          chmod +x ld-wrapper
+          LD="$(pwd)/ld-wrapper"
+        else
+          LD="ld.lld"
+        fi
+
+        if [ -d "$KERNEL_PLATFORM/build/build-tools/path" ]; then
+          DTC="$KERNEL_PLATFORM/build/kernel/build-tools/path/linux-x86/dtc"
+        else
+          DTC="$KERNEL_PLATFORM/prebuilts/kernel-build-tools/linux-x86/bin/dtc"
+        fi
 
         MAKE_FLAGS+=(
           LLVM=1
@@ -957,26 +968,14 @@ runs:
           ARCH=arm64
           SUBARCH=arm64
           CROSS_COMPILE="aarch64-linux-gnu-"
-          LD="$(pwd)/ld-wrapper"
+          LD="${LD}"
           HOSTLD=ld.lld
           AR=llvm-ar
           NM=llvm-nm
           OBJCOPY=llvm-objcopy
           OBJDUMP=llvm-objdump
           DEPMOD=depmod
-        )
-
-        if [ -d "$KERNEL_PLATFORM/build/build-tools/path" ]; then
-          MAKE_FLAGS+=(
-            DTC="$KERNEL_PLATFORM/build/kernel/build-tools/path/linux-x86/dtc"
-          )
-        else
-          MAKE_FLAGS+=(
-            DTC="$KERNEL_PLATFORM/prebuilts/kernel-build-tools/linux-x86/bin/dtc"
-          )
-        fi
-          
-        MAKE_FLAGS+=(
+          DTC="${DTC}"
           DTC_FLAGS="-@"
           STRIP=llvm-strip
           HOSTCC="ccache clang"
