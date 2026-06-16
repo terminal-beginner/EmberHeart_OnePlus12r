@@ -898,7 +898,6 @@ runs:
         fi
 
         make "${MAKE_FLAGS[@]}" O="$OUT" "${CONFIGS[@]}"
-        echo "kernel_release=$(make "${MAKE_FLAGS[@]}" O="$OUT" -s kernelrelease)" >> "$GITHUB_ENV"
 
         # LOCALVERSION branding
         if [ -n "${CUSTOM_LOCALVERSION:-}" ]; then
@@ -912,6 +911,8 @@ runs:
           ./scripts/config --file "$OUT/.config" \
             --enable LOCALVERSION_AUTO
         fi
+
+        echo "kernel_release=$(make "${MAKE_FLAGS[@]}" O="$OUT" -s kernelrelease)" >> "$GITHUB_ENV"
 
         echo "Starting build with $(nproc --all) threads..."
         SECONDS=0
