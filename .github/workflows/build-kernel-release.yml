@@ -311,16 +311,16 @@ jobs:
           if [ -z "$DEVICE" ]; then
              DEVICE="${{ inputs.model }}"
           fi
-          if [[ -n "${{ needs.build-kernel.outputs.susfs_version }}" ]]; then
-            RELEASE_NAME="$DEVICE EmberHeart Kernel With KernelSU Next ${{ needs.build-kernel.outputs.ksun_tag }}, Nethunter & SUSFS ${{ needs.build-kernel.outputs.susfs_version }}"
+          if [[ -n "${{ needs.build.outputs.susfs_version }}" ]]; then
+            RELEASE_NAME="$DEVICE EmberHeart Kernel With KernelSU Next ${{ needs.build.outputs.ksun_tag }}, Nethunter & SUSFS ${{ needs.build.outputs.susfs_version }}"
           else
-            RELEASE_NAME="$DEVICE EmberHeart Kernel With KernelSU Next ${{ needs.build-kernel.outputs.ksun_tag }} & Nethunter"
+            RELEASE_NAME="$DEVICE EmberHeart Kernel With KernelSU Next ${{ needs.build.outputs.ksun_tag }} & Nethunter"
           fi
           echo "RELEASE_NAME=$RELEASE_NAME" >> "$GITHUB_ENV"
 
       - name: Generate and Create New Tag
         run: |
-          BASE_TAG="${{ needs.build-kernel.outputs.ksun_tag }}-r0"
+          BASE_TAG="${{ needs.build.outputs.ksun_tag }}-r0"
           LATEST_TAG=$(gh api repos/$REPO_OWNER/$REPO_NAME/tags --jq '.[0].name')
           if [ -z "$LATEST_TAG" ]; then
             LATEST_TAG="$BASE_TAG"
@@ -343,16 +343,16 @@ jobs:
         run: |
           echo "=== Start building the release notes ==="
           
-          if [[ -n "${{ needs.build-kernel.outputs.susfs_version }}" ]]; then
+          if [[ -n "${{ needs.build.outputs.susfs_version }}" ]]; then
             cat << EOF > release_notes.md
-          This release contains KernelSU Next ${{ needs.build-kernel.outputs.ksun_tag }}, Nethunter and SUSFS ${{ needs.build-kernel.outputs.susfs_version }}
+          This release contains KernelSU Next ${{ needs.build.outputs.ksun_tag }}, Nethunter and SUSFS ${{ needs.build.outputs.susfs_version }}
 
           Module:
           -> https://github.com/sidex15/ksu_module_susfs
           EOF
           else
             cat << EOF > release_notes.md
-          This release contains KernelSU Next ${{ needs.build-kernel.outputs.ksun_tag }} & Nethunter
+          This release contains KernelSU Next ${{ needs.build.outputs.ksun_tag }} & Nethunter
           EOF
           fi
 
@@ -383,12 +383,12 @@ jobs:
           cat << EOF >> release_notes.md
 
           ### Features
-          - [+] KernelSU-Next ${{ needs.build-kernel.outputs.ksun_tag }} ( ${{ needs.build-kernel.outputs.ksun_version }} )
+          - [+] KernelSU-Next ${{ needs.build.outputs.ksun_tag }} ( ${{ needs.build.outputs.ksun_version }} )
           EOF
 
-          if [[ -n "${{ needs.build-kernel.outputs.susfs_version }}" ]]; then
+          if [[ -n "${{ needs.build.outputs.susfs_version }}" ]]; then
             cat << EOF >> release_notes.md
-          - [+] SUSFS ${{ needs.build-kernel.outputs.susfs_version }}
+          - [+] SUSFS ${{ needs.build.outputs.susfs_version }}
           EOF
           fi
 
@@ -405,11 +405,11 @@ jobs:
           - [+] IP Set Support
 
           > [!IMPORTANT]
-          > Kernel Image hash : ${{ needs.build-kernel.outputs.kernel_sha256 }}
-          > boot.img hash : ${{ needs.build-kernel.outputs.boot_sha256 }}
-          > system_dlkm.img hash : ${{ needs.build-kernel.outputs.system_dlkm_sha256 }}
-          > vendor_boot.img hash : ${{ needs.build-kernel-modules.outputs.vendor_boot_sha256 }}
-          > vendor_dlkm.img hash : ${{ needs.build-kernel-modules.outputs.vendor_dlkm_sha256 }}
+          > Kernel Image hash : ${{ needs.build.outputs.kernel_sha256 }}
+          > boot.img hash : ${{ needs.build.outputs.boot_sha256 }}
+          > system_dlkm.img hash : ${{ needs.build.outputs.system_dlkm_sha256 }}
+          > vendor_boot.img hash : ${{ needs.build.outputs.vendor_boot_sha256 }}
+          > vendor_dlkm.img hash : ${{ needs.build.outputs.vendor_dlkm_sha256 }}
 
           EOF
 
