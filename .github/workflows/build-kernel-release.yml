@@ -31,7 +31,6 @@ on:
         required: true
         type: choice
         options:
-          - OOS14
           - OOS15
           - OOS16
           - OOS16_CUSTOM
@@ -117,10 +116,9 @@ on:
         required: true
         type: choice
         options:
-          - OP11
-          - OP11_LOS
-          - POCO_F6_LOS
-        default: OP11
+          - OP12r
+          - OP12r_LOS
+        default: OP12r
 
 jobs:
   set-op-model:

@@ -164,7 +164,7 @@ runs:
       run: |
         set -euo pipefail
         echo "Cloning kernel patches for msm kernel..."
-        git clone --depth=1 https://github.com/nullptr-t-oss/kernel_patches.git my_patches
+        git clone --depth=1 https://github.com/terminal-beginner/kernel_patches.git my_patches
 
     - name: Clean Up ABI Protected Exports
       shell: bash
@@ -491,7 +491,7 @@ runs:
       shell: bash
       run: |
         OUT="$MSM/out"
-        PREBUILTS="https://raw.githubusercontent.com/nullptr-t-oss/kernel_patches/refs/heads/main/prebuilts/$MODEL"
+        PREBUILTS="https://raw.githubusercontent.com/terminal-beginner/kernel_patches/refs/heads/main/prebuilts/$MODEL"
         if curl -fsSL "$PREBUILTS/vendor_boot/dtb" -o "$OUT/dtb.img"; then
           echo "Using dtb from prebuilts."
         else
@@ -507,7 +507,7 @@ runs:
       id: create_system_dlkm
       shell: bash
       run: |
-        PREBUILTS="https://raw.githubusercontent.com/nullptr-t-oss/kernel_patches/refs/heads/main/prebuilts/$MODEL"
+        PREBUILTS="https://raw.githubusercontent.com/terminal-beginner/kernel_patches/refs/heads/main/prebuilts/$MODEL"
         OUT="$COMMON/out"
         UNAME=$(ls "$OUT/lib/modules/")
         DLKM_STAGING_DIR="$OUT/system_dlkm_staging"
@@ -565,7 +565,7 @@ runs:
       if: ${{ inputs.compile_dlkm == 'true' }}
       shell: bash
       run: |
-        PREBUILTS="https://raw.githubusercontent.com/nullptr-t-oss/kernel_patches/refs/heads/main/prebuilts/$MODEL"
+        PREBUILTS="https://raw.githubusercontent.com/terminal-beginner/kernel_patches/refs/heads/main/prebuilts/$MODEL"
         MKBOOTIMG="$KERNEL_PLATFORM/tools/mkbootimg/mkbootimg.py"
         OUT="$MSM/out"
         UNAME=$(ls "$OUT/lib/modules/")
@@ -679,7 +679,7 @@ runs:
       if: ${{ inputs.compile_dlkm == 'true' }}
       shell: bash
       run: |
-        PREBUILTS="https://raw.githubusercontent.com/nullptr-t-oss/kernel_patches/refs/heads/main/prebuilts/$MODEL"
+        PREBUILTS="https://raw.githubusercontent.com/terminal-beginner/kernel_patches/refs/heads/main/prebuilts/$MODEL"
         OUT="$MSM/out"
         UNAME=$(ls "$OUT/lib/modules/")
         MODULES_STAGING_ROOT="$OUT/lib/modules/$UNAME"
@@ -785,7 +785,7 @@ runs:
         echo "Removing unnecessary modules..."
         cd modules
         # Download default module list
-        curl -sL -o default_modules.txt https://raw.githubusercontent.com/nullptr-t-oss/kernel_patches/refs/heads/main/default_modules.txt
+        curl -sL -o default_modules.txt https://raw.githubusercontent.com/terminal-beginner/kernel_patches/refs/heads/main/default_modules.txt
         # Remove modules in the default list
 
         while IFS= read -r module; do
