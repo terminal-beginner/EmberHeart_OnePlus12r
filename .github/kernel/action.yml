@@ -551,11 +551,19 @@ runs:
           --enable CONFIG_TCP_CONG_BBR \
           --enable CONFIG_TCP_CONG_BBR3 \
           --enable CONFIG_NET_SCH_FQ \
-          --enable CONFIG_NET_SCH_FQ_CODEL
+          --enable CONFIG_NET_SCH_FQ_CODEL \
+          --enable CONFIG_NET_SCH_CAKE \
+          --enable CONFIG_NET_SCH_MQPRIO \
+          --enable CONFIG_NET_SCH_PIE \
+          --enable CONFIG_NET_SCH_FQ_PIE \
+          --disable CONFIG_HZ_250 \
+          --disable CONFIG_HZ_1000 \
+          --enable CONFIG_HZ_300 \
+          --set-val CONFIG_HZ 300
 
         echo "OnePlus BBR added ✅"
         echo "::endgroup::"
-
+        
     - name: Add my kernel patches to common kernel
       if: env.SOC == 'kalama' && !contains(env.MANIFEST_NAME, 'CUSTOM') && inputs.use_opt_patches == 'true'
       shell: bash
@@ -707,7 +715,7 @@ runs:
           --enable CONFIG_USB_SERIAL_CH341 \
           --enable CONFIG_USB_SERIAL_FTDI_SIO \
           --enable CONFIG_USB_SERIAL_PL2303
-
+          
         echo "Nethunter configs applied ✅"
         echo "::endgroup::"
 
