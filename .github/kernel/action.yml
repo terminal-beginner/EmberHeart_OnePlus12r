@@ -160,7 +160,7 @@ runs:
 
         echo "Using AnyKernel3 branch: $ANYKERNEL_BRANCH"
         git clone --depth=1 https://github.com/terminal-beginner/AnyKernel3.git -b "$ANYKERNEL_BRANCH"
-        git clone --depth=1 https://github.com/TheWildJames/kernel_patches.git
+        git clone --depth=1 https://github.com/WildKernels/kernel_patches.git
         git clone --depth=1 https://github.com/terminal-beginner/kernel_patches.git my_patches
 
     - name: Clone susfs
@@ -339,6 +339,18 @@ runs:
                 patch -p1 --forward < "$WILD_KERNEL_PATCHES/next/susfs_fix_patches/$susfs_version/multi_sepolicy_fix.patch"
             fi
             ;;
+          "v2.2.0")
+            cd ./KernelSU-Next
+            patch -p1 --forward < "../../../susfs4ksu/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch" || true
+            for file in $(find ./kernel -maxdepth 2 -name "*.rej" -exec basename {} .rej \;); do
+              echo "Patching file: $file with fix_$file.patch"
+              patch -p1 --forward < "$WILD_KERNEL_PATCHES/next/susfs_fix_patches/$susfs_version/fix_$file.patch"
+            done
+            echo "Patching Hook Mode!"
+            patch -p1 --forward < "$WILD_KERNEL_PATCHES/next/susfs_fix_patches/$susfs_version/overwrite_hook_mode.patch"
+            echo "Patching KSU_TOOLKIT Support for SusFS kernel!"
+            patch -p1 --forward < "$WILD_KERNEL_PATCHES/next/susfs_fix_patches/$susfs_version/ksu_toolkit.patch"
+            ;;
           *)
             echo "::error::Unsupported SUSFS version: $susfs_version"
             exit 1
@@ -353,24 +365,24 @@ runs:
 
         # Fake kernel patch to fix failures
         fake_patched=0
+        fake_patched_expand=0
         if [ "${{ env.ANDROID_RELEASE }}" = "android15" ] && [ "${{ env.KERNEL_VER }}" = "6.6" ]; then
           if ! grep -qxF $'\tunsigned int nr_subpages = __PAGE_SIZE / PAGE_SIZE;' ./fs/proc/task_mmu.c; then
             echo "nr_subpages Line not found. Fake Patching!"
             sed -i -e '/int ret = 0, copied = 0;/a \\tunsigned int nr_subpages \= __PAGE_SIZE \/ PAGE_SIZE;' -e '/int ret = 0, copied = 0;/a \\tpagemap_entry_t \*res = NULL;' ./fs/proc/task_mmu.c
             fake_patched=1
           fi
-        fi
 
-        if ! grep -qxF '#include <linux/dma-buf.h>' ./fs/proc/base.c; then
+          if ! grep -qxF '#include <linux/dma-buf.h>' ./fs/proc/base.c; then
             echo "#include <linux/dma-buf.h> Line not found. Adding missing header"
             sed -i '/#include <linux\/cpufreq_times.h>/a #include <linux\/dma-buf.h>' ./fs/proc/base.c
           fi
-          
+
           if ! grep -qxF '#include <linux/zswap.h>' ./mm/memory.c; then
             echo "#include <linux/zswap.h> Line not found. Adding missing header"
             sed -i '/#include <linux\/sched\/sysctl.h>/a #include <linux\/zswap.h>' ./mm/memory.c
           fi
-          
+
           if grep -qF 'if (vma->vm_end > last_vma_end)' ./fs/proc/task_mmu.c && ! grep -qxF 'SUSFS_IS_INODE_SUS_MAP' ./fs/proc/task_mmu.c; then
             echo "Temporarily expand the `last_vma_end` `if` block to fix a matching issue."
             perl -i -0pe 's/\t\t\tif \(vma->vm_end > last_vma_end\)\n\t\t\t\tsmap_gather_stats\(vma, &mss, last_vma_end\);/\t\t\tif (vma->vm_end > last_vma_end) {\n\t\t\t\tsmap_gather_stats(vma, \&mss, last_vma_end);\n\t\t\t\tlast_vma_end = vma->vm_end;\n\t\t\t}/' ./fs/proc/task_mmu.c
@@ -403,7 +415,7 @@ runs:
             echo "vma_pages Line not found. Fake Patching!"
             fake_patched=1
           fi
-          
+
           if ! grep -qxF '#include <linux/dma-buf.h>' ./fs/proc/base.c; then
             echo "#include <linux/dma-buf.h> Line not found. Adding missing header"
             sed -i '/#include <linux\/cpufreq_times.h>/a #include <linux\/dma-buf.h>' ./fs/proc/base.c
@@ -563,7 +575,7 @@ runs:
 
         echo "OnePlus BBR added ✅"
         echo "::endgroup::"
-        
+
     - name: Add my kernel patches to common kernel
       if: env.SOC == 'kalama' && !contains(env.MANIFEST_NAME, 'CUSTOM') && inputs.use_opt_patches == 'true'
       shell: bash
@@ -715,7 +727,7 @@ runs:
           --enable CONFIG_USB_SERIAL_CH341 \
           --enable CONFIG_USB_SERIAL_FTDI_SIO \
           --enable CONFIG_USB_SERIAL_PL2303
-          
+
         echo "Nethunter configs applied ✅"
         echo "::endgroup::"
 
@@ -913,7 +925,7 @@ runs:
           export PATH="$KERNEL_PLATFORM/prebuilts/kernel-build-tools/linux-x86/bin:$PATH"
         fi
 
-        if [ "${{ inputs.lto }}" = "Thin" ]; then 
+        if [ "${{ inputs.lto }}" = "Thin" ]; then
           echo '#!/bin/bash' > ld-wrapper
           echo 'ld.lld "$@" --thinlto-cache-dir=$LDCACHE_DIR --thinlto-jobs=$(nproc --all)' >> ld-wrapper
           chmod +x ld-wrapper
@@ -993,7 +1005,7 @@ runs:
         else
           make -j$(nproc --all) "${MAKE_FLAGS[@]}"  O="$OUT" Image
         fi
-        
+
 
         echo "duration=$SECONDS" >> "$GITHUB_ENV"
 
@@ -1188,7 +1200,7 @@ runs:
         # Don't create DLKM_STAGING_DIR and copy the OUT/lib folder cause it has many unnecessary files
         # Instead create lib and copy modules folder from OUT/lib/modules to DLKM_STAGING_DIR/lib/
         mkdir -p "$DLKM_STAGING_DIR/lib"
-        
+
         # copy modules and other files generated by depmod to staging dir
         cp -a "$OUT/lib/modules" "$DLKM_STAGING_DIR/lib/"
         cp "$DLKM_STAGING_ROOT/modules.order" "$DLKM_STAGING_ROOT/modules.load"
