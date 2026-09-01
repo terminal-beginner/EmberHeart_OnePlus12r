@@ -571,7 +571,8 @@ runs:
           --disable CONFIG_HZ_250 \
           --disable CONFIG_HZ_1000 \
           --enable CONFIG_HZ_300 \
-          --set-val CONFIG_HZ 300
+          --set-val CONFIG_HZ 300 \
+          --enable CONFIG_TCP_CONG_ROCCET
 
         echo "OnePlus BBR added ✅"
         echo "::endgroup::"
