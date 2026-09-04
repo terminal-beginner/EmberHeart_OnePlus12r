@@ -21,15 +21,12 @@ on:
         required: true
         type: choice
         options:
-          - OOS14
           - OOS15
           - OOS16
+          - OOS15_CUSTOM
           - OOS16_CUSTOM
-          - LOS_22_2
           - LOS_23_2
-          - HOS
-          - CUSTOM
-        default: OOS16_CUSTOM
+        default: OOS15_CUSTOM
       use_opt_patches:
         description: 'Do you want to add optimization patches in kernel?'
         required: true
@@ -100,14 +97,9 @@ on:
         type: choice
         options:
           - OP11
-          - OP12
           - OP12R
           - OP12r_los
-          - POCO_F6
-          - POCO_X6
-          - REDMI_15
-          - REDMI_12
-        default: OP11
+        default: OP12R
 
 jobs:
   set-model:
