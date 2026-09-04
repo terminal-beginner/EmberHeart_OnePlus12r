@@ -1,5 +1,7 @@
 {
   "model": "OP12r_los",
+  "product": "OnePlus 12R",
+  "codename": "aston",
   "soc": "kalama",
   "branch": "los/sm8550",
   "boot_partition_size": "201326592",
