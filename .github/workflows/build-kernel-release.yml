@@ -102,6 +102,7 @@ on:
           - OP11
           - OP12
           - OP12R
+          - OP12r_los
           - POCO_F6
           - POCO_X6
           - REDMI_15

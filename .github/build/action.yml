@@ -72,7 +72,7 @@ runs:
         set -euo pipefail
         echo "::group::Set build user/host"
 
-        BUILD_USER="nullptr_t"
+        BUILD_USER="Abdul_Qadir"
         BUILD_HOST="EmberHeart"
 
         echo "KBUILD_BUILD_USER=${BUILD_USER}" >> "${GITHUB_ENV}"
