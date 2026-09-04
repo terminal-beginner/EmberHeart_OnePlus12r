@@ -456,7 +456,7 @@ runs:
           echo " Installing dtbs to staging directory"
           set -x
           ( cd "${OUT}" && make "${MAKE_FLAGS[@]}" O="${OUT}" INSTALL_DTBS_PATH="${INSTALL_DTBS_PATH}" DTB_TYPES="${DTB_TYPES}" ${MAKE_GOALS} )
-          set +X
+          set +x
           _line
         else
 
