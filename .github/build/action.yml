@@ -554,7 +554,7 @@ runs:
           echo " Compiling vendor modules (oplus)"
           for EXT_MOD in "${EXT_OPLUS[@]}"; do
             if [[ ! -d "${ROOT_DIR}/${EXT_MOD}" ]]; then
-              echo "WARNING: The following module path does not exist : ${MODULE}" >&2
+              echo "WARNING: The following module path does not exist : ${EXT_MOD}" >&2
               continue
             fi
             set -x
@@ -610,7 +610,7 @@ runs:
 
         for EXT_MOD in "${EXT_MODULES[@]}"; do
             if [[ ! -d "${ROOT_DIR}/${EXT_MOD}" ]]; then
-              echo "WARNING: The following module path does not exist : ${MODULE}" >&2
+              echo "WARNING: The following module path does not exist : ${EXT_MOD}" >&2
               continue
             fi
             set -x
