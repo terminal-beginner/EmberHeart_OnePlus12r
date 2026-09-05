@@ -554,26 +554,36 @@ runs:
     - name: Disable Vendor / Kernel Modules
       shell: bash
       run: |
-       set -euo pipefail
-       echo "Disabling Vendor / Kernel Modules"
-       cd "$COMMON_KERNEL_FOLDER"
+        set -euo pipefail
+        echo "::group::Disabling Vendor / Kernel Modules"
 
-       # Hard-coded module blacklist
-       modules=("oplus_networks_tuning")
+        cd "$COMMON"
 
-       RESULT_LIST="\"$(IFS=,; echo "${modules[*]}")\""
+        CONFIG_FILE="arch/arm64/configs/gki_defconfig"
 
-       echo "Disabling modules: ${RESULT_LIST}"
+        # Hard-coded Oplus module blacklist
+        MODULE_NAME="oplus_networks_tuning"
 
-       CONFIG_FILE="arch/arm64/configs/gki_defconfig"
+        echo "Target module: $MODULE_NAME"
+        echo "Config file: $CONFIG_FILE"
 
-       # Remove any existing entry to avoid duplicates
-       sed -i '/^CONFIG_DEBLOAT_VENDOR_MODULES=/d' "$CONFIG_FILE"
+        # Make sure gki_defconfig exists
+        if [ ! -f "$CONFIG_FILE" ]; then
+          echo "::error::gki_defconfig not found: $CONFIG_FILE"
+          exit 1
+        fi
 
-       # Add hard-coded blacklist
-       echo "CONFIG_DEBLOAT_VENDOR_MODULES=${RESULT_LIST}" >> "$CONFIG_FILE"
+        # Remove an existing blacklist entry to avoid duplicates
+        sed -i '/^CONFIG_DEBLOAT_VENDOR_MODULES=/d' "$CONFIG_FILE"
 
-       echo "✅ Hard-coded module blacklist configured: oplus_networks_tuning"
+        # Add hard-coded module blacklist
+        echo "CONFIG_DEBLOAT_VENDOR_MODULES=\"$MODULE_NAME\"" >> "$CONFIG_FILE"
+
+        echo ""
+        echo "✅ Vendor module blacklist configured:"
+        grep '^CONFIG_DEBLOAT_VENDOR_MODULES=' "$CONFIG_FILE"
+
+        echo "::endgroup::"
 
     - name: Add Oneplus BBR
       shell: bash
