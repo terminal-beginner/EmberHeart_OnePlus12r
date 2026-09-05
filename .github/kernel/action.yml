@@ -45,12 +45,37 @@ inputs:
     required: false
     type: string
     default: 'false'
-  # ========== NEW INPUT ==========
+  # ========== NEW INPUTS ==========
   enable_nomount:
     description: 'Enable NoMount (hookless/ghost)'
     required: false
     type: string
     default: 'false'
+  build_timestamp:
+    description: 'Custom kernel build timestamp shown in uname -a (e.g. "Fri Dec 5 02:05:55 UTC 2025"). Leave empty to use the current build time.'
+    required: false
+    type: string
+    default: ''
+  clean:
+    description: 'Force clean build without ccache acceleration'
+    required: false
+    type: boolean
+    default: false
+  debug:
+    description: 'Enable dumping debug related artifacts'
+    required: false
+    type: boolean
+    default: false
+  nomount_ref:
+    description: 'NoMount-Suite branch/ref (default: main)'
+    required: false
+    type: string
+    default: main
+  patches_ref:
+    description: 'kernel_patches branch/ref (default: main)'
+    required: false
+    type: string
+    default: main
   # ================================
 
 outputs:
@@ -517,6 +542,7 @@ runs:
       run: |
         export COMMON_KERNEL_FOLDER="$COMMON"
         export BOUTEILLE_KERNEL_PATCHES_FOLDER="$GITHUB_WORKSPACE/bouton_kernel_patches"
+        export KSU_FOLDER="$KSU_FOLDER"
         cd "$KERNEL_PLATFORM"
         bash "$BOUTEILLE_KERNEL_PATCHES_FOLDER/scripts/apply_nomount_stack.sh" hookless
 
@@ -526,6 +552,7 @@ runs:
       run: |
         export COMMON_KERNEL_FOLDER="$COMMON"
         export BOUTEILLE_KERNEL_PATCHES_FOLDER="$GITHUB_WORKSPACE/bouton_kernel_patches"
+        export KSU_FOLDER="$KSU_FOLDER"
         cd "$KERNEL_PLATFORM"
         bash "$BOUTEILLE_KERNEL_PATCHES_FOLDER/scripts/apply_nomount_stack.sh" record-version
         bash "$BOUTEILLE_KERNEL_PATCHES_FOLDER/scripts/apply_nomount_stack.sh" hook
