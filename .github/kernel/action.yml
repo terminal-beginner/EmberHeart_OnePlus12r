@@ -516,18 +516,20 @@ runs:
       shell: bash
       run: |
         export COMMON_KERNEL_FOLDER="$COMMON"
+        export BOUTEILLE_KERNEL_PATCHES_FOLDER="$GITHUB_WORKSPACE/bouton_kernel_patches"
         cd "$KERNEL_PLATFORM"
-        bash "$GITHUB_WORKSPACE/bouton_kernel_patches/scripts/apply_nomount_stack.sh" hookless
+        bash "$BOUTEILLE_KERNEL_PATCHES_FOLDER/scripts/apply_nomount_stack.sh" hookless
 
     - name: Record NoMount Version & Apply hook/ghost
       if: ${{ inputs.enable_nomount == 'true' }}
       shell: bash
       run: |
         export COMMON_KERNEL_FOLDER="$COMMON"
+        export BOUTEILLE_KERNEL_PATCHES_FOLDER="$GITHUB_WORKSPACE/bouton_kernel_patches"
         cd "$KERNEL_PLATFORM"
-        bash "$GITHUB_WORKSPACE/bouton_kernel_patches/scripts/apply_nomount_stack.sh" record-version
-        bash "$GITHUB_WORKSPACE/bouton_kernel_patches/scripts/apply_nomount_stack.sh" hook
-        bash "$GITHUB_WORKSPACE/bouton_kernel_patches/scripts/apply_nomount_stack.sh" ghost
+        bash "$BOUTEILLE_KERNEL_PATCHES_FOLDER/scripts/apply_nomount_stack.sh" record-version
+        bash "$BOUTEILLE_KERNEL_PATCHES_FOLDER/scripts/apply_nomount_stack.sh" hook
+        bash "$BOUTEILLE_KERNEL_PATCHES_FOLDER/scripts/apply_nomount_stack.sh" ghost
     # ======================================
 
     - name: Apply KSUN Hooks
