@@ -45,6 +45,13 @@ inputs:
     required: false
     type: string
     default: 'false'
+  # ========== NEW INPUT ==========
+  enable_nomount:
+    description: 'Enable NoMount (hookless/ghost)'
+    required: false
+    type: string
+    default: 'false'
+  # ================================
 
 outputs:
   kernel_version:
@@ -162,6 +169,9 @@ runs:
         git clone --depth=1 https://github.com/terminal-beginner/AnyKernel3.git -b "$ANYKERNEL_BRANCH"
         git clone --depth=1 https://github.com/WildKernels/kernel_patches.git
         git clone --depth=1 https://github.com/terminal-beginner/kernel_patches.git my_patches
+        # ========== NEW CLONE ==========
+        git clone --depth=1 https://github.com/Bouteillepleine/kernel_patches.git -b main bouton_kernel_patches
+        # ================================
 
     - name: Clone susfs
       if: ${{ inputs.use_susfs == 'true' }}
@@ -264,7 +274,7 @@ runs:
         cd ./KernelSU-Next
         susfs_version=$(grep '#define SUSFS_VERSION' ../common/include/linux/susfs.h | awk -F'"' '{print $2}')
         echo "SUSVER=$susfs_version" >> $GITHUB_ENV
-        echo "susfs_version=${susfs_version:-unknown}" >> $GITHUB_OUTPUT
+        echo "susfs_version=${susfs_version:-unknown}" >> "$GITHUB_OUTPUT"
         echo "SuSFS Version: $susfs_version"
         cd ../
         # Function to compare semantic versions
@@ -499,6 +509,24 @@ runs:
         sed -i '/^config LSM$/,/^help$/{ /^[[:space:]]*default/ { /baseband_guard/! s/selinux/selinux,baseband_guard/ } }' security/Kconfig
         echo "BBG LSM added ✅"
         echo "::endgroup::"
+
+    # ========== NEW NoMount STEPS ==========
+    - name: Apply NoMount (hookless) Patch
+      if: ${{ inputs.enable_nomount == 'true' }}
+      shell: bash
+      run: |
+        cd "$KERNEL_PLATFORM"
+        bash "$GITHUB_WORKSPACE/bouton_kernel_patches/scripts/apply_nomount_stack.sh" hookless
+
+    - name: Record NoMount Version & Apply hook/ghost
+      if: ${{ inputs.enable_nomount == 'true' }}
+      shell: bash
+      run: |
+        cd "$KERNEL_PLATFORM"
+        bash "$GITHUB_WORKSPACE/bouton_kernel_patches/scripts/apply_nomount_stack.sh" record-version
+        bash "$GITHUB_WORKSPACE/bouton_kernel_patches/scripts/apply_nomount_stack.sh" hook
+        bash "$GITHUB_WORKSPACE/bouton_kernel_patches/scripts/apply_nomount_stack.sh" ghost
+    # ======================================
 
     - name: Apply KSUN Hooks
       shell: bash
@@ -895,11 +923,11 @@ runs:
     - name: Enable ADIOS I/O Scheduler config
       shell: bash
       run: |
-       cd "$COMMON"
-       ./scripts/config --file arch/arm64/configs/gki_defconfig \
-         --enable CONFIG_MQ_IOSCHED_ADIOS \
-         --enable CONFIG_MQ_IOSCHED_DEFAULT_ADIOS
-       echo "ADIOS config enabled ✅"
+        cd "$COMMON"
+        ./scripts/config --file arch/arm64/configs/gki_defconfig \
+          --enable CONFIG_MQ_IOSCHED_ADIOS \
+          --enable CONFIG_MQ_IOSCHED_DEFAULT_ADIOS
+        echo "ADIOS config enabled ✅"
 
     - name: Add Build based configs
       shell: bash
@@ -1314,6 +1342,11 @@ runs:
           echo "- SUSFS Version: ${SUSVER:-unknown}"
           echo "- SUSFS commit SHA: [${{ env.SUSFS_COMMIT_SHA }}](https://gitlab.com/simonpunk/susfs4ksu/-/commit/${{ env.SUSFS_COMMIT_SHA }})"
           echo "- Optimization: ${{ inputs.optimize_level }}"
+          # ========== NEW NoMount version line ==========
+          if [ "${{ inputs.enable_nomount }}" = "true" ]; then
+            echo "- NoMount Version: ${NMVER:-unknown}"
+          fi
+          # ==============================================
           echo ""
           echo "> [!IMPORTANT]"
           echo "> - Kernel Image SHA256: ${{ steps.collect_kernel_stats.outputs.image_sha256 }}"

@@ -120,6 +120,13 @@ on:
           - OP12r
           - OP12r_LOS
         default: OP12r
+      # ========== NEW INPUT ==========
+      enable_nomount:
+        description: 'Enable NoMount (hookless/ghost)'
+        required: true
+        type: boolean
+        default: false
+      # ================================
 
 jobs:
   set-op-model:
@@ -241,6 +248,9 @@ jobs:
           lto: ${{ inputs.lto }}
           kernel_uname: ${{ inputs.kernel_uname }}
           compile_dlkm: ${{ inputs.compile_dlkm }}
+          # ========== NEW LINE ==========
+          enable_nomount: ${{ inputs.enable_nomount }}
+          # ================================
 
       - name: Build Kernel Modules
         id: build_modules
