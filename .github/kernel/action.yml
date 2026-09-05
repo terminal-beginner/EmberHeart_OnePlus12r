@@ -891,6 +891,15 @@ runs:
 
         echo "IP  SET support added ✅"
         echo "::endgroup::"
+        
+    - name: Enable ADIOS I/O Scheduler config
+     shell: bash
+     run: |
+      cd "$COMMON"
+      ./scripts/config --file arch/arm64/configs/gki_defconfig \
+        --enable CONFIG_MQ_IOSCHED_ADIOS \
+        --enable CONFIG_MQ_IOSCHED_DEFAULT_ADIOS
+      echo "ADIOS config enabled ✅"
 
     - name: Add Build based configs
       shell: bash
