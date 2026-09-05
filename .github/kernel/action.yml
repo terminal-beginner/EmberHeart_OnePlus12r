@@ -514,18 +514,16 @@ runs:
     - name: Apply NoMount (hookless) Patch
       if: ${{ inputs.enable_nomount == 'true' }}
       shell: bash
-      env:
-        COMMON_KERNEL_FOLDER: ${{ env.COMMON_KERNEL_FOLDER }}
       run: |
+        export COMMON_KERNEL_FOLDER="$COMMON"
         cd "$KERNEL_PLATFORM"
         bash "$GITHUB_WORKSPACE/bouton_kernel_patches/scripts/apply_nomount_stack.sh" hookless
 
     - name: Record NoMount Version & Apply hook/ghost
       if: ${{ inputs.enable_nomount == 'true' }}
       shell: bash
-      env:
-        COMMON_KERNEL_FOLDER: ${{ env.COMMON_KERNEL_FOLDER }}
       run: |
+        export COMMON_KERNEL_FOLDER="$COMMON"
         cd "$KERNEL_PLATFORM"
         bash "$GITHUB_WORKSPACE/bouton_kernel_patches/scripts/apply_nomount_stack.sh" record-version
         bash "$GITHUB_WORKSPACE/bouton_kernel_patches/scripts/apply_nomount_stack.sh" hook
