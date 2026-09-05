@@ -550,6 +550,30 @@ runs:
           --enable CONFIG_KSU_SUSFS_OPEN_REDIRECT \
           --enable CONFIG_KSU_SUSFS_SUS_MAP \
           --disable CONFIG_KSU_SUSFS_SUS_SU
+          
+    - name: Disable Vendor / Kernel Modules
+      shell: bash
+      run: |
+       set -euo pipefail
+       echo "Disabling Vendor / Kernel Modules"
+       cd "$COMMON_KERNEL_FOLDER"
+
+       # Hard-coded module blacklist
+       modules=("oplus_networks_tuning")
+
+       RESULT_LIST="\"$(IFS=,; echo "${modules[*]}")\""
+
+       echo "Disabling modules: ${RESULT_LIST}"
+
+       CONFIG_FILE="arch/arm64/configs/gki_defconfig"
+
+       # Remove any existing entry to avoid duplicates
+       sed -i '/^CONFIG_DEBLOAT_VENDOR_MODULES=/d' "$CONFIG_FILE"
+
+       # Add hard-coded blacklist
+       echo "CONFIG_DEBLOAT_VENDOR_MODULES=${RESULT_LIST}" >> "$CONFIG_FILE"
+
+       echo "✅ Hard-coded module blacklist configured: oplus_networks_tuning"
 
     - name: Add Oneplus BBR
       shell: bash
