@@ -515,13 +515,15 @@ runs:
       if: ${{ inputs.enable_nomount == 'true' }}
       shell: bash
       run: |
-        cd "$KERNEL_PLATFORM"
-        bash "$GITHUB_WORKSPACE/bouton_kernel_patches/scripts/apply_nomount_stack.sh" hookless
+       export COMMON_KERNEL_FOLDER="$COMMON_KERNEL_FOLDER"
+       cd "$KERNEL_PLATFORM"
+       bash "$GITHUB_WORKSPACE/bouton_kernel_patches/scripts/apply_nomount_stack.sh" hookless
 
     - name: Record NoMount Version & Apply hook/ghost
       if: ${{ inputs.enable_nomount == 'true' }}
       shell: bash
       run: |
+        export COMMON_KERNEL_FOLDER="$COMMON_KERNEL_FOLDER"
         cd "$KERNEL_PLATFORM"
         bash "$GITHUB_WORKSPACE/bouton_kernel_patches/scripts/apply_nomount_stack.sh" record-version
         bash "$GITHUB_WORKSPACE/bouton_kernel_patches/scripts/apply_nomount_stack.sh" hook
@@ -925,8 +927,7 @@ runs:
       run: |
         cd "$COMMON"
         ./scripts/config --file arch/arm64/configs/gki_defconfig \
-          --enable CONFIG_MQ_IOSCHED_ADIOS \
-          --enable CONFIG_MQ_IOSCHED_DEFAULT_ADIOS
+          --enable CONFIG_MQ_IOSCHED_ADIOS 
         echo "ADIOS config enabled ✅"
 
     - name: Add Build based configs
