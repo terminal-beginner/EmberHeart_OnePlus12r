@@ -13,5 +13,6 @@
   "manifest_oos16_custom": "https://raw.githubusercontent.com/terminal-beginner/kernel_patches/refs/heads/main/kernel_manifest/oneplus_12r_b.xml",
   "android_version": "android13",
   "kernel_version": "5.15",
+  "blacklist_modules": "oplus_networks_tuning",
   "hmbird": false
 }
