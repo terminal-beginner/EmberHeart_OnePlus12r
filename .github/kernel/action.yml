@@ -582,6 +582,21 @@ runs:
 
         echo "KernelSU and SUSFS configuration added ✅"
         echo "::endgroup::"
+        
+    - name: Apply BORE CPU Scheduler
+      shell: bash
+      run: |
+        echo "::group::Apply BORE scheduler patch"
+        cd "$COMMON_KERNEL_FOLDER"
+        # Download patch
+        curl -fsSL -o bore.patch https://raw.githubusercontent.com/Bouteillepleine/kernel_patches/main/experimental/bore_5.15.patch
+        # Apply
+        patch -p1 < bore.patch
+        # Enable config
+        ./scripts/config --file arch/arm64/configs/gki_defconfig --enable CONFIG_SCHED_BORE
+        echo "✅ BORE scheduler applied"
+        rm -f bore.patch
+        echo "::endgroup::"
 
     - name: Add SUSFS Configuration Settings
       if: ${{ inputs.use_susfs == 'true' }}

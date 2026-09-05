@@ -120,12 +120,37 @@ on:
           - OP12r
           - OP12r_LOS
         default: OP12r
-      # ========== NEW INPUT ==========
+      # ========== NEW INPUTS ==========
       enable_nomount:
         description: 'Enable NoMount (hookless/ghost)'
         required: true
         type: boolean
         default: false
+      build_timestamp:
+        description: 'Custom kernel build timestamp shown in uname -a (e.g. "Fri Dec 5 02:05:55 UTC 2025"). Leave empty to use the current build time.'
+        required: false
+        type: string
+        default: ''
+      clean:
+        description: 'Force clean build without ccache acceleration'
+        required: false
+        type: boolean
+        default: false
+      debug:
+        description: 'Enable dumping debug related artifacts'
+        required: false
+        type: boolean
+        default: false
+      nomount_ref:
+        description: 'NoMount-Suite branch/ref to source the Prism engine src + patches from (default main; set a branch to validate it before it is released). The engine ships inside the Suite repo, under hookless/.'
+        required: false
+        type: string
+        default: main
+      patches_ref:
+        description: 'kernel_patches branch/ref to source the _ghost/_hook/_pathhide cloaks and the apply script from (default main; set a test branch to validate before merge)'
+        required: false
+        type: string
+        default: main
       # ================================
 
 jobs:
@@ -248,8 +273,13 @@ jobs:
           lto: ${{ inputs.lto }}
           kernel_uname: ${{ inputs.kernel_uname }}
           compile_dlkm: ${{ inputs.compile_dlkm }}
-          # ========== NEW LINE ==========
+          # ========== NEW LINES ==========
           enable_nomount: ${{ inputs.enable_nomount }}
+          build_timestamp: ${{ inputs.build_timestamp }}
+          clean: ${{ inputs.clean }}
+          debug: ${{ inputs.debug }}
+          nomount_ref: ${{ inputs.nomount_ref }}
+          patches_ref: ${{ inputs.patches_ref }}
           # ================================
 
       - name: Build Kernel Modules
