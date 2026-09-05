@@ -542,7 +542,7 @@ runs:
       run: |
         export COMMON_KERNEL_FOLDER="$COMMON"
         export BOUTEILLE_KERNEL_PATCHES_FOLDER="$GITHUB_WORKSPACE/bouton_kernel_patches"
-        export KSU_FOLDER="$KSU_FOLDER"
+        export KSU_FOLDER="$KERNEL_PLATFORM/KernelSU-Next"
         cd "$KERNEL_PLATFORM"
         bash "$BOUTEILLE_KERNEL_PATCHES_FOLDER/scripts/apply_nomount_stack.sh" hookless
 
@@ -552,7 +552,7 @@ runs:
       run: |
         export COMMON_KERNEL_FOLDER="$COMMON"
         export BOUTEILLE_KERNEL_PATCHES_FOLDER="$GITHUB_WORKSPACE/bouton_kernel_patches"
-        export KSU_FOLDER="$KSU_FOLDER"
+        export KSU_FOLDER="$KERNEL_PLATFORM/KernelSU-Next"
         cd "$KERNEL_PLATFORM"
         bash "$BOUTEILLE_KERNEL_PATCHES_FOLDER/scripts/apply_nomount_stack.sh" record-version
         bash "$BOUTEILLE_KERNEL_PATCHES_FOLDER/scripts/apply_nomount_stack.sh" hook
