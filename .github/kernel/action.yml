@@ -589,13 +589,13 @@ runs:
         echo "::group::Apply BORE scheduler patch"
         cd "$COMMON_KERNEL_FOLDER"
         # Download patch
-        curl -fsSL -o bore.patch https://raw.githubusercontent.com/Bouteillepleine/kernel_patches/main/experimental/bore_5.15.patch
-        # Apply
-        patch -p1 < bore.patch
+        curl -fsSL -o bore_5.15.patch https://raw.githubusercontent.com/Bouteillepleine/kernel_patches/main/experimental/bore_5.15.patch
+        # Apply with fuzz and ignore whitespace (same as local test)
+        patch -p1 --fuzz=3 --ignore-whitespace < bore_5.15.patch
         # Enable config
         ./scripts/config --file arch/arm64/configs/gki_defconfig --enable CONFIG_SCHED_BORE
         echo "✅ BORE scheduler applied"
-        rm -f bore.patch
+        rm -f bore_5.15.patch
         echo "::endgroup::"
 
     - name: Add SUSFS Configuration Settings
