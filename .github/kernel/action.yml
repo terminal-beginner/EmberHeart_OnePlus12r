@@ -961,10 +961,25 @@ runs:
     - name: Enable ADIOS I/O Scheduler config
       shell: bash
       run: |
+        set -euo pipefail
         cd "$COMMON"
+
         ./scripts/config --file arch/arm64/configs/gki_defconfig \
-          --enable CONFIG_MQ_IOSCHED_ADIOS 
-        echo "ADIOS config enabled ✅"
+          --enable CONFIG_MQ_IOSCHED_ADIOS
+
+        # ADIOS uses C99-style declarations in for-loop initializers.
+        # Build this source with GNU11 to avoid -Wgcc-compat errors.
+        if ! grep -q '^CFLAGS_adios.o += -std=gnu11' block/Makefile; then
+          echo 'CFLAGS_adios.o += -std=gnu11' >> block/Makefile
+        fi
+
+        echo "ADIOS config:"
+        grep '^CONFIG_MQ_IOSCHED_ADIOS=' arch/arm64/configs/gki_defconfig
+
+        echo "ADIOS compiler flags:"
+        grep '^CFLAGS_adios.o' block/Makefile
+
+        echo "ADIOS enabled ✅"
 
     - name: Add Build based configs
       shell: bash
