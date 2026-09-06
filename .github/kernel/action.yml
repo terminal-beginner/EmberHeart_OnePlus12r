@@ -1030,6 +1030,25 @@ runs:
 
         echo "Kernel branding applied ✅"
         echo "::endgroup::"
+        
+    - name: Apply fake_config patch (hide KSU/SUSFS from /proc/config.gz)
+      shell: bash
+      run: |
+        echo "::group::Apply fake_config patch"
+        cd "$COMMON_KERNEL_FOLDER"
+    
+        # Download and apply the patch
+        curl -fsSL -o fake_config.patch https://raw.githubusercontent.com/WildKernels/kernel_patches/main/common/fake_config.patch
+        patch -p1 --forward < fake_config.patch || true
+        rm -f fake_config.patch
+    
+        # Set the config options to hide
+        export CONFIG_FAKE_DISABLE="CONFIG_KSU,CONFIG_SUSFS,CONFIG_NOMOUNT,CONFIG_BBG,CONFIG_DEBLOAT_VENDOR_MODULES"
+        echo "CONFIG_FAKE_DISABLE=$CONFIG_FAKE_DISABLE" >> "$GITHUB_ENV"
+    
+        echo "✅ fake_config patch applied"
+        echo "   Hiding: $CONFIG_FAKE_DISABLE"
+        echo "::endgroup::"
 
     - name: Build Kernel
       shell: bash
