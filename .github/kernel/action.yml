@@ -927,6 +927,20 @@ runs:
 
         echo "TTL support added ✅"
         echo "::endgroup::"
+    
+    - name: Add kexec Support
+      shell: bash
+      run: |
+        set -euo pipefail
+        echo "::group::Adding kexec support..."
+        cd "$COMMON"
+
+        ./scripts/config --file arch/arm64/configs/gki_defconfig \
+          --enable CONFIG_KEXEC \
+          --enable CONFIG_KEXEC_FILE
+
+        echo "kexec support added ✅"
+        echo "::endgroup::"
 
     - name: Add IP SET Support
       shell: bash
