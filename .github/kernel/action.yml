@@ -937,7 +937,11 @@ runs:
 
         ./scripts/config --file arch/arm64/configs/gki_defconfig \
           --enable CONFIG_KEXEC \
-          --enable CONFIG_KEXEC_FILE
+          --enable CONFIG_KEXEC_FILE \
+          --disable CONFIG_KEXEC_SIG \
+          --disable CONFIG_KEXEC_SIG_FORCE \
+          --disable CONFIG_KEXEC_FILE_SIG \
+          --disable CONFIG_KEXEC_BZIMAGE_VERIFY_SIG
 
         echo "kexec support added ✅"
         echo "::endgroup::"
