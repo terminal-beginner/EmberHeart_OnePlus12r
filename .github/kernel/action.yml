@@ -813,51 +813,68 @@ runs:
         set -euo pipefail
         echo "::group::Disabling Vendor / Kernel Modules"
 
-        cd "$COMMON"
+        cd "${ROOT_DIR}/common"
 
         CONFIG_FILE="arch/arm64/configs/gki_defconfig"
-
-        # Hard-coded Oplus module blacklist
         MODULE_NAME="oplus_networks_tuning"
 
         echo "Target module: $MODULE_NAME"
         echo "Config file: $CONFIG_FILE"
 
-         # Make sure gki_defconfig exists
-         if [ ! -f "$CONFIG_FILE" ]; then
-         echo "::error::gki_defconfig not found: $CONFIG_FILE"
-         exit 1
-         fi
+        if [[ ! -f "$CONFIG_FILE" ]]; then
+          echo "::error::gki_defconfig not found: ${ROOT_DIR}/common/${CONFIG_FILE}"
+          exit 1
+        fi
 
-         # Remove an existing blacklist entry to avoid duplicates
-         sed -i '/^CONFIG_DEBLOAT_VENDOR_MODULES=/d' "$CONFIG_FILE"
+        sed -i '/^CONFIG_DEBLOAT_VENDOR_MODULES=/d' "$CONFIG_FILE"
 
-         # Add hard-coded module blacklist
-         echo "CONFIG_DEBLOAT_VENDOR_MODULES=\"$MODULE_NAME\"" >> "$CONFIG_FILE"
+        echo "CONFIG_DEBLOAT_VENDOR_MODULES=\"$MODULE_NAME\"" >> "$CONFIG_FILE"
 
-         echo ""
-         echo "✅ Vendor module blacklist configured:"
-         grep '^CONFIG_DEBLOAT_VENDOR_MODULES=' "$CONFIG_FILE"
+        echo ""
+        echo "Vendor module blacklist configured:"
+        grep '^CONFIG_DEBLOAT_VENDOR_MODULES=' "$CONFIG_FILE"
 
-         echo "::endgroup::"
+        echo "::endgroup::"
          
     - name: Apply fake_config patch (hide KSU/SUSFS from /proc/config.gz)
       shell: bash
       run: |
+        set -euo pipefail
         echo "::group::Apply fake_config patch"
-        cd "$COMMON_KERNEL_FOLDER"
-    
-        # Download and apply the patch
-        curl -fsSL -o fake_config.patch https://raw.githubusercontent.com/WildKernels/kernel_patches/main/common/fake_config.patch
-        patch -p1 --forward < fake_config.patch || true
-        rm -f fake_config.patch
-    
-        # Set the config options to hide
-        export CONFIG_FAKE_DISABLE="CONFIG_KSU,CONFIG_SUSFS,CONFIG_NOMOUNT,CONFIG_BBG,CONFIG_DEBLOAT_VENDOR_MODULES"
+
+        cd "${ROOT_DIR}/common"
+
+        FAKE_CONFIG_PATCH="fake_config.patch"
+        FAKE_CONFIG_URL="https://raw.githubusercontent.com/WildKernels/kernel_patches/main/common/fake_config.patch"
+
+        echo "Downloading fake_config patch..."
+
+        curl --fail --location --retry 3 --retry-delay 2 \
+          -o "$FAKE_CONFIG_PATCH" "$FAKE_CONFIG_URL"
+
+        if [[ ! -s "$FAKE_CONFIG_PATCH" ]]; then
+          echo "::error::fake_config.patch is empty"
+          rm -f "$FAKE_CONFIG_PATCH"
+          exit 1
+        fi
+
+        echo "Applying fake_config patch..."
+
+        if patch -p1 --forward < "$FAKE_CONFIG_PATCH"; then
+          echo "fake_config patch applied ✅"
+        else
+          echo "::error::Failed to apply fake_config patch"
+          rm -f "$FAKE_CONFIG_PATCH"
+          exit 1
+        fi
+
+        rm -f "$FAKE_CONFIG_PATCH"
+
+        CONFIG_FAKE_DISABLE="CONFIG_KSU,CONFIG_SUSFS,CONFIG_NOMOUNT,CONFIG_BBG,CONFIG_DEBLOAT_VENDOR_MODULES"
+
         echo "CONFIG_FAKE_DISABLE=$CONFIG_FAKE_DISABLE" >> "$GITHUB_ENV"
-    
-        echo "✅ fake_config patch applied"
-        echo "   Hiding: $CONFIG_FAKE_DISABLE"
+
+        echo "Hiding: $CONFIG_FAKE_DISABLE"
         echo "::endgroup::"
         
     - name: Add kexec Support
@@ -865,9 +882,17 @@ runs:
       run: |
         set -euo pipefail
         echo "::group::Adding kexec support..."
-        cd "$COMMON"
 
-        ./scripts/config --file arch/arm64/configs/gki_defconfig \
+        cd "${ROOT_DIR}/common"
+
+        CONFIG_FILE="arch/arm64/configs/gki_defconfig"
+
+        if [[ ! -f "$CONFIG_FILE" ]]; then
+          echo "::error::gki_defconfig not found: ${ROOT_DIR}/common/${CONFIG_FILE}"
+          exit 1
+        fi
+
+        ./scripts/config --file "$CONFIG_FILE" \
           -e CONFIG_KEXEC_FILE \
           -d CONFIG_KEXEC_SIG \
           -d CONFIG_KEXEC_SIG_FORCE \
