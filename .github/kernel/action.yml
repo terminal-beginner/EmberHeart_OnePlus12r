@@ -801,7 +801,8 @@ runs:
           -e CONFIG_NET_SCH_FQ_CODEL \
           -e CONFIG_NET_SCH_CAKE \
           -e CONFIG_NET_SCH_PIE \
-          -e CONFIG_NET_SCH_FQ_PIE
+          -e CONFIG_NET_SCH_FQ_PIE \
+          -e CONFIG_TCP_CONG_ROCCET
 
         echo "Traffic schedulers (qdisc) enabled ✅"
         echo "::endgroup::"
