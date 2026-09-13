@@ -10,17 +10,17 @@
   "clang": "manifest",
   "tree": "mixed",
   "manifest_oos15": {
-    "url": "https://raw.githubusercontent.com/nullptr-t-oss/kernel_patches/refs/heads/main/kernel_manifest/oneplus_12r_v.xml",
+    "url": "https://raw.githubusercontent.com/terminal-beginner/kernel_patches/refs/heads/main/kernel_manifest/oneplus_12r_v.xml",
     "os": "OxygenOS 15",
     "os_short": "oos15"
   },
   "manifest_oos16": {
-    "url": "https://raw.githubusercontent.com/nullptr-t-oss/kernel_patches/refs/heads/main/kernel_manifest/oneplus_12r_b.xml",
+    "url": "https://raw.githubusercontent.com/terminal-beginner/kernel_patches/refs/heads/main/kernel_manifest/oneplus_12r_b.xml",
     "os": "OxygenOS 16",
     "os_short": "oos16"
   },
   "manifest_oos16_custom": {
-    "url": " https://raw.githubusercontent.com/nullptr-t-oss/kernel_patches/refs/heads/main/kernel_manifest/oneplus_12r_b_custom.xml",
+    "url": "https://raw.githubusercontent.com/terminal-beginner/kernel_patches/refs/heads/main/kernel_manifest/oneplus_12r_b.xml",
     "os": "OxygenOS 16",
     "os_short": "oos16"
   },
