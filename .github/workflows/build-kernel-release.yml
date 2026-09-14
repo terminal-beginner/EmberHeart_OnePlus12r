@@ -4,6 +4,10 @@ permissions:
   contents: write
   actions: write
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.inputs.release_type }}-${{ github.ref }}-${{ github.event.inputs.ksu_type }}-${{ github.event.inputs.model }}
+  cancel-in-progress: ${{ github.event.inputs.release_type != 'Release' }}
+
 on:
   workflow_dispatch:
     inputs:
@@ -38,31 +42,49 @@ on:
           - LOS_23_2
           - OOS15_CUSTOM
         default: OOS16_CUSTOM
-      evict_unused_ccache:
-        description: 'Do you want to use evict unused ccache?'
+      ksu_type:
+        description: 'Select KSU Type'
         required: true
-        type: boolean
-        default: true
-      use_custom_repo_parser:
-        description: 'Do you want to use custom repo parser?'
-        required: true
-        type: boolean
-        default: true
+        type: choice
+        options:
+          - KSU_NEXT
+          - RSKSU
+        default: KSU_NEXT
       use_opt_patches:
         description: 'Do you want to add optimization patches in kernel?'
         required: true
         type: boolean
         default: true
       use_susfs:
-        description: 'Do you want to add susfs in kernel?'
+        description: 'Do you want to add susfs in kernel? (KSU_NEXT only)'
         required: true
         type: boolean
         default: true
+      use_nomount:
+        description: 'Do you want to add NoMount (hookless) in kernel? (RSKSU only)'
+        required: false
+        type: boolean
+        default: false
+      use_adios:
+        description: 'Enable ADIOS I/O scheduler support'
+        required: false
+        type: boolean
+        default: false
+      use_ntsync:
+        description: 'Enable NTSync support (patch availability varies by kernel version)'
+        required: false
+        type: boolean
+        default: false
+      vendor_debloat:
+        description: 'Comma-separated vendor modules to blacklist (empty = skip). Protected: coresight, rust_binder, msm_kgsl, camera'
+        required: false
+        type: string
+        default: ''
       ksun_branch:
-        description: 'Enter KernelSU Next Branch or commit hash (blank for stable tag)'
+        description: 'Enter KernelSU Next / ReSukiSU Branch or commit hash (blank for stable tag)'
         required: true
         type: string
-        default: dev
+        default: ''
       optimize_level:
         description: "Compiler optimization level"
         required: true
@@ -73,7 +95,7 @@ on:
         description: "Link Time Optimization level"
         required: true
         type: choice
-        options: [Thin, Full]
+        options: [none, Thin, Full]
         default: Full
       clang_version:
         description: "Select Compiler version"
@@ -87,12 +109,9 @@ on:
           - aosp-clang-r563880c
           - aosp-clang-r574158
         default: 'default'
-      kernel_uname:
-        description: 'Kernel uname'
-        type: string
-        default: ''
-      susfs_branch_or_commit:
-        description: 'Enter SusFS Branch or commit hash'
+      build_timestamp:
+        description: 'Custom kernel build timestamp for uname -a (e.g. "Fri Dec 5 02:05:55 UTC 2025"). Leave empty for current time.'
+        required: false
         type: string
         default: ''
       vendor_branch_or_commit:
@@ -177,16 +196,22 @@ jobs:
     name: Build ${{ matrix.model }} EmberHeart
     needs: set-op-model
     runs-on: ubuntu-latest
+    timeout-minutes: 90
     outputs:
       kernel_version: ${{ steps.build_kernel.outputs.kernel_version }}
       ksun_version: ${{ steps.build_kernel.outputs.ksun_version }}
       ksun_tag: ${{ steps.build_kernel.outputs.ksun_tag }}
       susfs_version: ${{ steps.build_kernel.outputs.susfs_version }}
+      nomount_version: ${{ steps.build_kernel.outputs.nomount_version }}
       kernel_sha256: ${{ steps.build_kernel.outputs.kernel_sha256 }}
       boot_sha256: ${{ steps.build_kernel.outputs.boot_sha256 }}
       system_dlkm_sha256: ${{ steps.build_kernel.outputs.system_dlkm_sha256 }}
       vendor_boot_sha256:  ${{ steps.build_modules.outputs.vendor_boot_sha256 }}
       vendor_dlkm_sha256: ${{ steps.build_modules.outputs.vendor_dlkm_sha256 }}
+      zip_name: ${{ steps.build_kernel.outputs.zip_name }}
+      build_timestamp_used: ${{ steps.build_kernel.outputs.build_timestamp_used }}
+      ccache_hit_rate: ${{ steps.build_kernel.outputs.ccache_hit_rate }}
+      ccache_direct_rate: ${{ steps.build_kernel.outputs.ccache_direct_rate }}
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       BUILD_TYPE: ${{ inputs.build_target }}
@@ -217,7 +242,7 @@ jobs:
         with:
           op_config_json: ${{ toJSON(matrix) }}
           manifest: ${{ inputs.manifest }}
-          use_custom_repo_parser: ${{ inputs.use_custom_repo_parser }}
+          use_custom_repo_parser: 'true'
           clang_version: ${{ inputs.clang_version }}
           common_branch_or_commit: ${{ inputs.common_branch_or_commit }}
           msm_branch_or_commit: ${{ inputs.msm_branch_or_commit }}
@@ -233,14 +258,25 @@ jobs:
           LDCACHE_DIR: ${{ github.workspace }}/.kernel_lto_cache
         with:
           ksun_branch_or_hash: ${{ inputs.ksun_branch }}
-          evict_unused_ccache: ${{ inputs.evict_unused_ccache }}
-          use_opt_patches: ${{ inputs.use_opt_patches }}
-          use_susfs: ${{ inputs.use_susfs }}
-          susfs_commit_hash_or_branch: ${{ inputs.susfs_branch_or_commit }}
+          ksu_type: ${{ inputs.ksu_type }}
+          evict_unused_ccache: 'true'
+          clean_build: 'false'
+          use_opt_patches: ${{ inputs.use_opt_patches == true && 'true' || 'false' }}
+          use_susfs: ${{ inputs.use_susfs == true && 'true' || 'false' }}
+          susfs_commit_hash_or_branch: ''
+          use_nomount: ${{ inputs.use_nomount == true && 'true' || 'false' }}
+          nomount_ref: 'main'
+          patches_ref: 'main'
+          use_adios: ${{ inputs.use_adios == true && 'true' || 'false' }}
+          use_ntsync: ${{ inputs.use_ntsync == true && 'true' || 'false' }}
+          use_unicode_fix: 'true'
+          use_ipv6_nat: 'true'
+          vendor_debloat: ${{ inputs.vendor_debloat }}
           optimize_level: ${{ inputs.optimize_level }}
           lto: ${{ inputs.lto }}
-          kernel_uname: ${{ inputs.kernel_uname }}
-          compile_dlkm: ${{ inputs.compile_dlkm }}
+          build_timestamp: ${{ inputs.build_timestamp }}
+          kernel_uname: ''
+          compile_dlkm: ${{ inputs.compile_dlkm == true && 'true' || 'false' }}
 
       - name: Build Kernel Modules
         id: build_modules
@@ -252,12 +288,49 @@ jobs:
         with:
           optimize_level: ${{ inputs.optimize_level }}
           lto: ${{ inputs.lto }}
-          evict_unused_ccache: ${{ inputs.evict_unused_ccache }}
-          compile_dlkm: ${{ inputs.compile_dlkm }}
+          evict_unused_ccache: 'true'
+          clean_build: 'false'
+          compile_dlkm: ${{ inputs.compile_dlkm == true && 'true' || 'false' }}
+
+  build_report:
+    name: 📋 Build report
+    needs: [set-op-model, build]
+    if: always()
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Summarize build results
+        run: |
+          set -uo pipefail
+          jobs="$(gh api --paginate \
+            "repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/jobs?per_page=100" \
+            --jq '.jobs[] | select(.name|startswith("Build ")) | "\(.conclusion)\t\(.name)"')"
+
+          total=$(printf '%s\n' "$jobs" | grep -c . || true)
+          ok=$(printf '%s\n'    "$jobs" | grep -c   '^success' || true)
+          bad=$(printf '%s\n'   "$jobs" | grep -cvE '^success' || true)
+
+          {
+            echo "## 📋 Build Report"
+            echo ""
+            echo "**✅ ${ok} succeeded · ❌ ${bad} failed · ${total} total**"
+            if [ "${bad:-0}" -gt 0 ]; then
+              echo ""
+              echo "### ❌ Failed / cancelled"
+              echo ""
+              echo "| Job | Result |"
+              echo "|-----|--------|"
+              printf '%s\n' "$jobs" | grep -vE '^success' | while IFS=$'\t' read -r concl name; do
+                echo "| \`${name}\` | ${concl:-unknown} |"
+              done
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
 
   trigger-release:
     needs:
       - build
+      - set-op-model
     runs-on: ubuntu-latest
     if: ${{ inputs.release_type != 'none' && contains(fromJSON('["Mixed Build", "Monolithic Build"]'), inputs.build_target) }}
     env:
@@ -271,10 +344,10 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Download Wirless Firmware Module for Nethunter 
+      - name: Download Wireless Firmware Module for Nethunter
         id: download_external
         env:
-          SOURCE_REPO: nullptr-t-oss/Nethunter-Wireless-Firmware 
+          SOURCE_REPO: nullptr-t-oss/Nethunter-Wireless-Firmware
         run: |
           echo "--- Downloading Latest Release Asset from $SOURCE_REPO ---"
 
@@ -310,11 +383,25 @@ jobs:
           if [ -z "$DEVICE" ]; then
              DEVICE="${{ inputs.model }}"
           fi
-          if [[ -n "${{ needs.build.outputs.susfs_version }}" ]]; then
-            RELEASE_NAME="$DEVICE EmberHeart Kernel With KernelSU Next ${{ needs.build.outputs.ksun_tag }}, Nethunter & SUSFS ${{ needs.build.outputs.susfs_version }}"
+
+          KSU_LABEL="${{ inputs.ksu_type }}"
+          if [ "$KSU_LABEL" = "RSKSU" ]; then
+            KSU_LABEL="ReSukiSU"
           else
-            RELEASE_NAME="$DEVICE EmberHeart Kernel With KernelSU Next ${{ needs.build.outputs.ksun_tag }} & Nethunter"
+            KSU_LABEL="KernelSU Next"
           fi
+
+          SUFFIX=""
+          if [ "${{ inputs.use_susfs }}" = "true" ] && [ "${{ inputs.ksu_type }}" = "KSU_NEXT" ]; then
+            SUFFIX=", SUSFS ${{ needs.build.outputs.susfs_version }}"
+          fi
+
+          NMS_SUFFIX=""
+          if [ "${{ inputs.use_nomount }}" = "true" ] && [ "${{ inputs.ksu_type }}" = "RSKSU" ]; then
+            NMS_SUFFIX=" & NoMount ${{ needs.build.outputs.nomount_version }}"
+          fi
+
+          RELEASE_NAME="$DEVICE EmberHeart Kernel With $KSU_LABEL ${{ needs.build.outputs.ksun_tag }}${SUFFIX}${NMS_SUFFIX} & Nethunter"
           echo "RELEASE_NAME=$RELEASE_NAME" >> "$GITHUB_ENV"
 
       - name: Generate and Create New Tag
@@ -337,31 +424,108 @@ jobs:
         with:
           path: ./downloaded-artifacts
 
+      - name: Generate Checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! compgen -G "./downloaded-artifacts/**/*.zip" > /dev/null; then
+            echo "::warning::No ZIP artifacts found, skipping checksum generation."
+            exit 0
+          fi
+          cd downloaded-artifacts
+          find . -maxdepth 3 -type f \( -name "*.zip" -o -name "*.img" \) -exec sha256sum {} \; | sort -k2 > ../00_CHECKSUMS.txt
+          cd ..
+          echo "Generated 00_CHECKSUMS.txt:"
+          cat 00_CHECKSUMS.txt
+
+      - name: Generate Downloads Index
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          {
+            echo "# 📥 OnePlus EmberHeart Kernel Downloads"
+            echo ""
+            echo "> Select the ZIP matching your exact **device**, **OS version**, and **kernel base**."
+            echo ""
+            echo "## ⚠️ Important"
+            echo ""
+            echo "- Flashing the wrong ZIP may cause bootloop."
+            echo "- Back up your current boot/init_boot/vendor_boot before flashing."
+            echo "- Use Kernel Flasher or another trusted flashing method."
+            echo ""
+            echo "## Quick Guide"
+            echo ""
+            echo "| What to check | Example |"
+            echo "|---|---|"
+            echo "| **Device** | \`OP12r\`, \`OP12\` |"
+            echo "| **Kernel Base** | \`android13-5.15.x\` |"
+            echo "| **Root Type** | \`${{ inputs.ksu_type }}\` |"
+            echo ""
+          } > 00_DOWNLOADS.md
+
+          mapfile -t files < <(find downloaded-artifacts -maxdepth 3 -type f -name "*.zip" | sort)
+
+          if [ "${#files[@]}" -gt 0 ]; then
+            {
+              echo "## Builds"
+              echo ""
+              echo "| File | SHA256 |"
+              echo "|---|---|"
+            } >> 00_DOWNLOADS.md
+
+            for file in "${files[@]}"; do
+              name="$(basename "$file")"
+              sha="$(sha256sum "$file" | awk '{print $1}')"
+              short_sha="${sha:0:12}"
+              asset_url="${{ github.server_url }}/${{ github.repository }}/releases/download/${{ env.NEW_TAG }}/${name}"
+              echo "| [${name}](${asset_url}) | \`${short_sha}...\` |" >> 00_DOWNLOADS.md
+            done
+            echo "" >> 00_DOWNLOADS.md
+          fi
+
+          {
+            echo "---"
+            echo ""
+            echo "## 🔐 Full SHA256 Checksums"
+            echo ""
+            echo "Use \`00_CHECKSUMS.txt\` from this release to verify downloads."
+            echo ""
+            echo '```bash'
+            echo "sha256sum -c 00_CHECKSUMS.txt"
+            echo '```'
+          } >> 00_DOWNLOADS.md
+
+          echo "Generated 00_DOWNLOADS.md:"
+          cat 00_DOWNLOADS.md
+
       - name: Generate Device List and Final Release Notes
         id: generate-notes
         run: |
           echo "=== Start building the release notes ==="
-          
-          if [[ -n "${{ needs.build.outputs.susfs_version }}" ]]; then
-            cat << EOF > release_notes.md
-          This release contains KernelSU Next ${{ needs.build.outputs.ksun_tag }}, Nethunter and SUSFS ${{ needs.build.outputs.susfs_version }}
 
-          Module:
-          -> https://github.com/sidex15/ksu_module_susfs
+          KSU_LABEL="${{ inputs.ksu_type }}"
+          if [ "$KSU_LABEL" = "RSKSU" ]; then
+            KSU_LABEL="ReSukiSU"
+          else
+            KSU_LABEL="KernelSU Next"
+          fi
+
+          if [ "${{ inputs.use_susfs }}" = "true" ] && [ "${{ inputs.ksu_type }}" = "KSU_NEXT" ]; then
+            cat << EOF > release_notes.md
+          This release contains $KSU_LABEL ${{ needs.build.outputs.ksun_tag }}, Nethunter and SUSFS ${{ needs.build.outputs.susfs_version }}
+          EOF
+          elif [ "${{ inputs.use_nomount }}" = "true" ] && [ "${{ inputs.ksu_type }}" = "RSKSU" ]; then
+            cat << EOF > release_notes.md
+          This release contains $KSU_LABEL ${{ needs.build.outputs.ksun_tag }}, Nethunter and NoMount ${{ needs.build.outputs.nomount_version }}
           EOF
           else
             cat << EOF > release_notes.md
-          This release contains KernelSU Next ${{ needs.build.outputs.ksun_tag }} & Nethunter
+          This release contains $KSU_LABEL ${{ needs.build.outputs.ksun_tag }} & Nethunter
           EOF
           fi
 
           cat << EOF >> release_notes.md
-
-          Official Managers:
-          -> https://github.com/KernelSU-Next/KernelSU-Next  
-
-          Non-Official Managers:
-          -> https://github.com/WildKernels/Wild_KSU
 
           ### Built Devices
 
@@ -369,25 +533,29 @@ jobs:
           |-------|----------------|
           EOF
 
-          # Generate table rows
-          find downloaded-artifacts -name "*.txt" -type f | sort | while read -r file; do
+          find downloaded-artifacts -name "*.txt" -type f -maxdepth 4 | sort | while read -r file; do
             if [ -n "$file" ]; then
               model=$(basename "$file" .txt)
-              version=$(cat "$file")
+              version=$(head -n1 "$file")
               printf "| %-12s | %-16s |\n" "$model" "$version" >> release_notes.md
             fi
           done
 
-          # Add features and finalize
           cat << EOF >> release_notes.md
 
           ### Features
-          - [+] KernelSU-Next ${{ needs.build.outputs.ksun_tag }} ( ${{ needs.build.outputs.ksun_version }} )
+          - [+] $KSU_LABEL ${{ needs.build.outputs.ksun_tag }} ( ${{ needs.build.outputs.ksun_version }} )
           EOF
 
-          if [[ -n "${{ needs.build.outputs.susfs_version }}" ]]; then
+          if [ "${{ inputs.use_susfs }}" = "true" ] && [ "${{ inputs.ksu_type }}" = "KSU_NEXT" ]; then
             cat << EOF >> release_notes.md
           - [+] SUSFS ${{ needs.build.outputs.susfs_version }}
+          EOF
+          fi
+
+          if [ "${{ inputs.use_nomount }}" = "true" ] && [ "${{ inputs.ksu_type }}" = "RSKSU" ]; then
+            cat << EOF >> release_notes.md
+          - [+] NoMount (hookless) ${{ needs.build.outputs.nomount_version }}
           EOF
           fi
 
@@ -397,11 +565,43 @@ jobs:
           - [+] Ptrace message leak fix for kernels < 5.16
           - [+] Manual Hooks [scope_min_manual_hooks_v1.4]
           - [+] CONFIG_TMPFS_XATTR Support [Mountify Support]
-          - [+] BBR v1 Support
+          - [+] Multi-manager Support + KSU Toolkit
+          - [+] BBR v1 & BBRv3 Support
+          - [+] IPv6 NAT Support
           - [+] Baseband Guard Support (BBG)
           - [+] Nethunter Support
           - [+] Mem kernel driver by @Poko-Apps [r/w to physical memory]
           - [+] IP Set Support
+          - [+] Unicode Path Fix
+          EOF
+
+          if [ "${{ inputs.use_adios }}" = "true" ]; then
+            cat << EOF >> release_notes.md
+          - [+] ADIOS I/O Scheduler
+          EOF
+          fi
+
+          if [ "${{ inputs.use_ntsync }}" = "true" ]; then
+            cat << EOF >> release_notes.md
+          - [+] NTSync Support (Wine/Proton)
+          EOF
+          fi
+
+          if [ -n "${{ inputs.vendor_debloat }}" ]; then
+            cat << EOF >> release_notes.md
+          - [+] Vendor Module Debloat (\`${{ inputs.vendor_debloat }}\`)
+          EOF
+          fi
+
+          cat << EOF >> release_notes.md
+
+          ### Build Configuration
+          | Component | Value |
+          |-----------|-------|
+          | Optimization | ${{ inputs.optimize_level }} |
+          | LTO | ${{ inputs.lto }} |
+          | Clean Build | false |
+          | Custom Timestamp | \`${{ needs.build.outputs.build_timestamp_used }}\` |
 
           > [!IMPORTANT]
           > Kernel Image hash : ${{ needs.build.outputs.kernel_sha256 }}
@@ -412,32 +612,64 @@ jobs:
 
           EOF
 
-          # Output for debugging
           echo "--- Final Release Notes ---"
           cat release_notes.md
 
-      - name: Create GitHub Pre-release
+      - name: Create GitHub Pre-release (draft)
         if: ${{ inputs.release_type == 'Pre-release' }}
         run: |
           gh release create "${{ env.NEW_TAG }}" \
             --repo "${{ env.REPO_OWNER }}/${{ env.REPO_NAME }}" \
             --title "*Test-build*-${{ env.RELEASE_NAME }}-${{ env.OS_VERSION }}*Test Build*" \
             --notes-file release_notes.md \
+            --draft \
             --prerelease
 
-      - name: Create GitHub Release
+      - name: Create GitHub Release (draft)
         if: ${{ inputs.release_type == 'Release' }}
         run: |
           gh release create "${{ env.NEW_TAG }}" \
             --repo "${{ env.REPO_OWNER }}/${{ env.REPO_NAME }}" \
             --title "${{ env.RELEASE_NAME }}-${{ env.OS_VERSION }}" \
-            --notes-file release_notes.md
+            --notes-file release_notes.md \
+            --draft
 
       - name: Upload Release Assets Dynamically
         run: |
-          for file in ./downloaded-artifacts/*/*.{zip,img}; do
+          for file in ./downloaded-artifacts/**/*.{zip,img}; do
             if [ -f "$file" ]; then
               echo "Uploading $file..."
               gh release upload "${{ env.NEW_TAG }}" "$file" --clobber
+            fi
+          done
+          for meta in 00_CHECKSUMS.txt 00_DOWNLOADS.md; do
+            if [ -f "$meta" ]; then
+              echo "Uploading $meta..."
+              gh release upload "${{ env.NEW_TAG }}" "$meta" --clobber
+            fi
+          done
+
+      - name: Release summary
+        if: success()
+        run: |
+          cat >> $GITHUB_STEP_SUMMARY << EOF
+
+          ---
+
+          ## 🎉 Release Draft Created Successfully
+
+          **Tag:** [\`${{ env.NEW_TAG }}\`](${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ env.NEW_TAG }})
+
+          > ⚠️ This is a **draft** release. Review and publish it from the GitHub Releases page.
+
+          ### 📦 Assets
+          EOF
+
+          find ./downloaded-artifacts -maxdepth 4 -type f \( -name "*.zip" -o -name "*.img" \) | while read -r zip; do
+            if [ -f "$zip" ]; then
+              name=$(basename "$zip")
+              size=$(stat -c%s "$zip")
+              size_mb=$(echo "scale=2; $size / 1024 / 1024" | bc)
+              echo "- \`$name\` (${size_mb} MB)" >> $GITHUB_STEP_SUMMARY
             fi
           done

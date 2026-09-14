@@ -128,22 +128,17 @@ runs:
         manifest="$MANIFEST"
         optimize='${{ inputs.optimize_level }}'
 
-        # Non-empty checks
         [[ -n "$model" ]] || { echo "Input 'model' cannot be empty"; exit 1; }
         [[ -n "$soc" ]] || { echo "Input 'soc' cannot be empty"; exit 1; }
         [[ -n "$branch" ]] || { echo "Input 'branch' cannot be empty"; exit 1; }
         [[ -n "$manifest" ]] || { echo "Input 'manifest' cannot be empty"; exit 1; }
 
-        # Basic format checks
-        # soc: allow letters, digits, underscores, dashes (e.g., sm8650)
         if ! [[ "$soc" =~ ^[A-Za-z0-9_-]+$ ]]; then
-          echo "Input 'soc' contains invalid characters. Allowed: letters, digits, underscore, dash"; exit 1
+          echo "Input 'soc' contains invalid characters."; exit 1
         fi
-        # branch: allow common ref patterns; spaces not allowed
         if ! [[ "$branch" =~ ^[A-Za-z0-9._/-]+$ ]]; then
-          echo "Input 'branch' contains invalid characters. Allowed: letters, digits, ., _, -, /"; exit 1
+          echo "Input 'branch' contains invalid characters."; exit 1
         fi
-        # manifest: either HTTPS URL ending with .xml, or a filename ending with .xml (no spaces)
         if [[ "$manifest" == http*://* ]]; then
           if ! [[ "$manifest" =~ ^https:// ]]; then
             echo "Manifest URL must be HTTPS"; exit 1
@@ -159,7 +154,6 @@ runs:
             echo "Manifest filename cannot contain spaces"; exit 1
           fi
         fi
-        # Optimize level validation
         case "$optimize" in
           O2|O3) ;;
           *) echo "optimize_level must be O2 or O3; got '$optimize'"; exit 1 ;;
@@ -171,9 +165,6 @@ runs:
       shell: bash
       run: |
         set -euo pipefail
-        # Derive a unique build directory name
-        set -euo pipefail
-        # Derive a unique build directory name
         CONFIG="$GITHUB_WORKSPACE/$MODEL"
         ARTIFACTS_DIR="$CONFIG/artifacts"
         ARTIFACTS_DIR_DEBUG="$CONFIG/debug/artifacts"
@@ -190,12 +181,132 @@ runs:
         WILD_KERNEL_PATCHES="$GITHUB_WORKSPACE/kernel_patches"
         KERNEL_PATCHES="$GITHUB_WORKSPACE/my_patches"
 
+        # === MTIME CACHE SETUP (nullptr-style sha256-based method) ===
+        DYNAMIC_CACHE_DIR="$CONFIG/dynamic_cache"
+        MTIME_CACHE="$CONFIG/dynamic_mtime.sh"
+
         echo "Creating folder for configuration: $CONFIG"
         mkdir -p "$CONFIG"
-
         mkdir -p "$ARTIFACTS_DIR"
         mkdir -p "$ARTIFACTS_DIR_DEBUG"
         mkdir -p "$KBUILD_MIXED_TREE_DIR"
+        mkdir -p "$DYNAMIC_CACHE_DIR"
+
+        # Write inline mtime script (nullptr's algorithm, fixed implementation)
+        cat > "$MTIME_CACHE" << 'MTIME_SCRIPT_EOF'
+#!/bin/bash
+# nullptr-style mtime hack: sha256-based change detection
+# Goal: restore old mtimes for UNCHANGED files so ccache hits survive re-patching
+#
+# Usage:
+#   dynamic_mtime.sh -u -d <dir> -k <key>   # update cache (hash all files, save hash+mtime+path)
+#   dynamic_mtime.sh -t -d <dir> -k <key>   # restore mtimes for files whose hash is unchanged
+#
+# Cache format: <sha256>|<mtime_epoch>|<absolute_path>
+# Cache file:   $DYNAMIC_CACHE_DIR/<key>.cache
+
+set -euo pipefail
+
+MODE=""
+DIR=""
+KEY=""
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -t|-u) MODE="$1"; shift ;;
+    -d) DIR="${2:-}"; shift 2 ;;
+    -k) KEY="${2:-}"; shift 2 ;;
+    *) shift ;;
+  esac
+done
+
+if [ -z "${MODE}" ] || [ -z "${DIR}" ]; then
+  echo "[mtime] usage: -t|-u -d <dir> -k <key>" >&2
+  exit 0
+fi
+
+if [ ! -d "${DIR}" ]; then
+  echo "[mtime] dir not found: ${DIR}, skipping" >&2
+  exit 0
+fi
+
+DIR="$(cd "${DIR}" && pwd)"
+
+CACHE_DIR="${DYNAMIC_CACHE_DIR:-/tmp/mtime_cache}"
+mkdir -p "${CACHE_DIR}"
+CACHE_FILE="${CACHE_DIR}/${KEY:-default}.cache"
+
+list_files() {
+  find "${DIR}" \
+    \( -path "*/.git" -o -path "*/out" -o -path "*/build" -o -path "*/.tmp_versions" \) -prune -o \
+    -type f -print0 2>/dev/null
+}
+
+file_signature() {
+  local f="$1"
+  local h m
+  h=$(sha256sum -- "${f}" 2>/dev/null | awk '{print $1}') || return 1
+  m=$(stat -c %Y -- "${f}" 2>/dev/null) || return 1
+  [ -n "${h}" ] && [ -n "${m}" ] || return 1
+  printf '%s|%s|%s\n' "${h}" "${m}" "${f}"
+}
+
+case "${MODE}" in
+  -u)
+    echo "[mtime] ${KEY}: updating cache for ${DIR}"
+    NEW_CACHE="${CACHE_FILE}.new.$$"
+    : > "${NEW_CACHE}"
+
+    while IFS= read -r -d '' file; do
+      sig=$(file_signature "${file}") || continue
+      printf '%s\n' "${sig}" >> "${NEW_CACHE}"
+    done < <(list_files)
+
+    mv -f "${NEW_CACHE}" "${CACHE_FILE}"
+    total=$(wc -l < "${CACHE_FILE}" || echo 0)
+    echo "[mtime] ${KEY}: cached ${total} files"
+    ;;
+
+  -t)
+    if [ ! -f "${CACHE_FILE}" ]; then
+      echo "[mtime] ${KEY}: no cache yet, skipping restore"
+      exit 0
+    fi
+
+    echo "[mtime] ${KEY}: restoring mtimes from cache"
+    restored=0
+    skipped=0
+    missing=0
+
+    while IFS='|' read -r old_hash old_mtime path; do
+      [ -z "${path:-}" ] && continue
+
+      if [ ! -f "${path}" ]; then
+        missing=$((missing + 1))
+        continue
+      fi
+
+      cur_hash=$(sha256sum -- "${path}" 2>/dev/null | awk '{print $1}') || { skipped=$((skipped + 1)); continue; }
+
+      if [ "${cur_hash}" = "${old_hash}" ]; then
+        touch -d "@${old_mtime}" -- "${path}" 2>/dev/null && restored=$((restored + 1)) || skipped=$((skipped + 1))
+      else
+        skipped=$((skipped + 1))
+      fi
+    done < "${CACHE_FILE}"
+
+    echo "[mtime] ${KEY}: restored=${restored} changed_or_skipped=${skipped} missing=${missing}"
+    ;;
+esac
+
+exit 0
+MTIME_SCRIPT_EOF
+
+        # Strip YAML indentation (8 spaces) from every line so shebang lands at column 0
+        sed -i 's/^        //' "$MTIME_CACHE"
+
+        chmod +x "$MTIME_CACHE"
+        echo "✅ MTIME hack installed: $MTIME_CACHE"
 
         echo "CONFIG=$CONFIG" >> "$GITHUB_ENV"
         echo "ARTIFACTS_DIR=$ARTIFACTS_DIR" >> "$GITHUB_ENV"
@@ -206,8 +317,9 @@ runs:
         echo "KBUILD_MIXED_TREE_DIR=$KBUILD_MIXED_TREE_DIR" >> "$GITHUB_ENV"
         echo "WILD_KERNEL_PATCHES=$WILD_KERNEL_PATCHES" >> "$GITHUB_ENV"
         echo "KERNEL_PATCHES=$KERNEL_PATCHES" >> "$GITHUB_ENV"
+        echo "DYNAMIC_CACHE_DIR=$DYNAMIC_CACHE_DIR" >> "$GITHUB_ENV"
+        echo "MTIME_CACHE=$MTIME_CACHE" >> "$GITHUB_ENV"
 
-        # Install repo tool if missing
         REPO="/usr/local/bin/repo"
         if [ ! -x "$REPO" ]; then
           curl -s https://storage.googleapis.com/git-repo-downloads/repo -o "$REPO"
@@ -220,10 +332,8 @@ runs:
       shell: bash
       run: |
         if [[ "$MANIFEST" =~ ^https?:// ]]; then
-            # It is already a full URL, pass it through
             echo "MANIFEST=$MANIFEST" >> $GITHUB_ENV
         else
-            # Convert it to the raw GitHub URL coz my composite action supports only URLs
             RAW_URL="https://raw.githubusercontent.com/OnePlusOSS/kernel_manifest/${BRANCH}/${MANIFEST}"
             echo "MANIFEST=${RAW_URL}" >> $GITHUB_ENV
         fi
@@ -236,17 +346,12 @@ runs:
         cd "$CONFIG"
 
         if [[ -n "${{ inputs.common_branch_or_commit }}" ]]; then
-          # Calculate the relative path from CONFIG to COMMON
-          # coz we'll use this path to find the required project to be modified in manifest
           REL_COMMON=$(realpath --relative-to="$CONFIG" "$COMMON")
           echo "[DEBUG] Calculated relative path: $REL_COMMON"
-
           OVERRIDES="${REL_COMMON}=${{ inputs.common_branch_or_commit }}"
         fi
 
         if [[ -n "${{ inputs.msm_branch_or_commit }}" ]]; then
-          # Calculate the relative path from CONFIG to MSM
-          # coz we'll use this path to find the required project to be modified in manifest
           REL_MSM=$(realpath --relative-to="$CONFIG" "$MSM")
           OVERRIDES="$OVERRIDES,${REL_MSM}=${{ inputs.msm_branch_or_commit }}"
           echo "[DEBUG] Calculated relative path: $REL_MSM"
@@ -315,37 +420,30 @@ runs:
         cd "$COMMON"
         if [[ -z "${{ inputs.common_branch_or_commit }}" ]]; then
           echo "Custom branch or commit not specified, proceeding on current HEAD of common kernel "
-          echo "Current HEAD for COMMON kernel repo is at:"
           git show HEAD --no-patch
         else
           git fetch --all --depth=1
           git checkout "${{ inputs.common_branch_or_commit }}"
-          echo "Current HEAD for COMMON kernel repo is at:"
           git show HEAD --no-patch
         fi
 
         cd "$CONFIG"
-
         if [[ -z "${{ inputs.vendor_branch_or_commit }}" ]]; then
-          echo "Custom branch or commit not specified, proceeding on current HEAD of vendor modules and device tree branch"
-          echo "Current HEAD for vendor modules repo is at:"
+          echo "Custom branch or commit not specified"
           git show HEAD --no-patch
         else
           git fetch --all --depth=1
           git checkout "${{ inputs.vendor_branch_or_commit }}"
-          echo "Current HEAD for vendor modules repo is at:"
           git show HEAD --no-patch
         fi
         
         cd "$MSM"
         if [[ -z "${{ inputs.msm_branch_or_commit }}" ]]; then
-          echo "Custom branch or commit not specified, proceeding on current HEAD of msm kernel"
-          echo "Current HEAD for MSM kernel repo is at:"
+          echo "Custom branch or commit not specified"
           git show HEAD --no-patch
         else
           git fetch --all --depth=1
           git checkout "${{ inputs.msm_branch_or_commit }}"
-          echo "Current HEAD for MSM kernel repo is at:"
           git show HEAD --no-patch
         fi
 
@@ -355,7 +453,6 @@ runs:
       run: |
         set -euo pipefail
         echo "CLANG=${{ inputs.clang_version }}" >> "$GITHUB_ENV"
-
 
     - name: Download Clang (toolchain for build)
       uses: terminal-beginner/kernel_toolchains/clang_setup@main

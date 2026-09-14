@@ -12,10 +12,15 @@ inputs:
   lto:
     required: false
     type: string
-    default: Thin  # Choices: Thin or Full
+    default: Thin  # Choices: none, Thin, Full
   evict_unused_ccache:
     description: 'Do you want to evict unused ccache?'
     required: true
+    type: string
+    default: 'false'
+  clean_build:
+    description: 'Force clean build without ccache acceleration'
+    required: false
     type: string
     default: 'false'
   compile_dlkm:
@@ -77,6 +82,7 @@ runs:
         echo "ANDROID_RELEASE=$ANDROID_RELEASE" >> "$GITHUB_ENV"
         echo "KERNEL_VER=$VERSION.$PATCHLEVEL" >> "$GITHUB_ENV"
         echo "KERNEL_FULL_VER=$ANDROID_RELEASE-$KERNEL_VERSION" >> "$GITHUB_ENV"
+        echo "TKERNEL_VER=$KERNEL_VERSION" >> "$GITHUB_ENV"
         echo "SUSFS_KERNEL_BRANCH=gki-$ANDROID_RELEASE-$VERSION.$PATCHLEVEL" >> "$GITHUB_ENV"
 
         cd "$COMMON"
@@ -110,6 +116,11 @@ runs:
         # For mixed and monolithic builds
         rm -rf "$CCACHE_DIR"
 
+        if [ "${{ inputs.clean_build }}" = "true" ]; then
+          echo "🧹 Clean build mode: ccache will not be used or saved"
+          ccache -C >/dev/null 2>&1 || true
+        fi
+
         ccache -o compression=false
         ccache -M 5G
 
@@ -117,6 +128,7 @@ runs:
         echo "ccache_start=$(date +%s)" >> "$GITHUB_ENV"
 
     - name: Restore ccache
+      if: ${{ inputs.clean_build != 'true' }}
       uses: actions/cache/restore@v5
       with:
         path: ${{ env.CCACHE_DIR }}
@@ -126,7 +138,7 @@ runs:
           ccache-${{ env.MODEL }}-modules-${{ inputs.optimize_level }}-
 
     - name: Restore LTO cache
-      if: ${{ inputs.lto == 'Thin'}}
+      if: ${{ inputs.lto == 'Thin' && inputs.clean_build != 'true' }}
       uses: actions/cache/restore@v5
       with:
         path: ${{ env.LDCACHE_DIR }}
@@ -178,7 +190,7 @@ runs:
       run: |
         set -euo pipefail
         cd "$MSM"
-        
+
         # Realtek drivers
         ./scripts/config --file arch/arm64/configs/gki_defconfig \
           --enable CONFIG_WLAN_VENDOR_REALTEK
@@ -255,17 +267,26 @@ runs:
         echo "::group::Applying build based configs..."
         cd "$MSM"
 
-        if [ "${{ inputs.lto }}" = "Thin" ]; then
-          ./scripts/config --file arch/arm64/configs/gki_defconfig \
-            --enable CONFIG_LTO_CLANG_THIN \
-            --enable CONFIG_LTO_CLANG
-        else
-          ./scripts/config --file arch/arm64/configs/gki_defconfig \
-            --enable CONFIG_LTO_CLANG_FULL \
-            --enable CONFIG_LTO_CLANG
-        fi
+        LTO_INPUT="${{ inputs.lto }}"
+        case "$LTO_INPUT" in
+          none|None|NONE)
+            ./scripts/config --file arch/arm64/configs/gki_defconfig \
+              --disable CONFIG_LTO_CLANG_THIN \
+              --disable CONFIG_LTO_CLANG_FULL \
+              --enable CONFIG_LTO_NONE || true
+            ;;
+          Thin)
+            ./scripts/config --file arch/arm64/configs/gki_defconfig \
+              --enable CONFIG_LTO_CLANG_THIN \
+              --enable CONFIG_LTO_CLANG
+            ;;
+          Full)
+            ./scripts/config --file arch/arm64/configs/gki_defconfig \
+              --enable CONFIG_LTO_CLANG_FULL \
+              --enable CONFIG_LTO_CLANG
+            ;;
+        esac
 
-        # Optimize level config and flags
         if [ "${{ inputs.optimize_level }}" = "O3" ]; then
           ./scripts/config --file arch/arm64/configs/gki_defconfig \
             --disable CC_OPTIMIZE_FOR_PERFORMANCE \
@@ -290,7 +311,21 @@ runs:
           export PATH="$KERNEL_PLATFORM/prebuilts/kernel-build-tools/linux-x86/bin:$PATH"
         fi
 
-        if [ "${{ inputs.lto }}" = "Thin" ]; then 
+        # MTIME -u: detect changes and force recompilation only for changed files
+        if [ -n "${MTIME_CACHE:-}" ] && [ -x "$MTIME_CACHE" ]; then
+          echo "::group::MTIME -u (detect changes) for modules build"
+          [ -d "$COMMON" ] && ( "$MTIME_CACHE" -u -d "$COMMON" -k gki-kernel ) || echo "::warning::MTIME update failed for common"
+          [ -d "$MSM" ] && ( "$MTIME_CACHE" -u -d "$MSM" -k msm-kernel ) || true
+          [ -d "$CONFIG/vendor" ] && ( "$MTIME_CACHE" -u -d "$CONFIG/vendor" -k vendor ) || true
+          [ -d "$KERNEL_PLATFORM/Baseband-guard" ] && ( "$MTIME_CACHE" -u -d "$KERNEL_PLATFORM/Baseband-guard" -k bbg ) || true
+          [ -d "$KERNEL_PLATFORM/susfs4ksu" ] && ( "$MTIME_CACHE" -u -d "$KERNEL_PLATFORM/susfs4ksu" -k susfs ) || true
+          [ -n "${KSU_DIR:-}" ] && [ -d "$KSU_DIR" ] && ( "$MTIME_CACHE" -u -d "$KSU_DIR" -k ksun ) || true
+          [ -d "$GITHUB_WORKSPACE/nomount_suite" ] && ( "$MTIME_CACHE" -u -d "$GITHUB_WORKSPACE/nomount_suite" -k nomount ) || true
+          echo "::endgroup::"
+        fi
+
+        LTO_INPUT="${{ inputs.lto }}"
+        if [ "$LTO_INPUT" = "Thin" ]; then
           echo '#!/bin/bash' > ld-wrapper
           echo 'ld.lld "$@" --thinlto-cache-dir=$LDCACHE_DIR --thinlto-jobs=$(nproc --all)' >> ld-wrapper
           chmod +x ld-wrapper
@@ -519,20 +554,15 @@ runs:
           export PATH="$KERNEL_PLATFORM/prebuilts/kernel-build-tools/linux-x86/bin:$PATH"
         fi
 
-        # Don't create DLKM_STAGING_DIR and copy the OUT/lib folder cause it has many unnecessary files
-        # Instead create lib and copy modules folder from OUT/lib/modules to DLKM_STAGING_DIR/lib/
         mkdir -p "$DLKM_STAGING_DIR/lib"
         
-        # copy modules and other files generated by depmod to staging dir
         cp -a "$OUT/lib/modules" "$DLKM_STAGING_DIR/lib/"
         cp "$DLKM_STAGING_ROOT/modules.order" "$DLKM_STAGING_ROOT/modules.load"
         cp "$DLKM_STAGING_ROOT/modules.load" "$OUT/system_dlkm.modules.load"
 
-        # remove unnecessary files from DLKM_STAGING_ROOT
         cd "$DLKM_STAGING_ROOT"
         rm build source modules.builtin.modinfo
 
-        # add other files found in stock system_dlkm
         cd "$DLKM_STAGING_DIR"
         mkdir -p etc
         cd etc
@@ -540,7 +570,6 @@ runs:
         touch fs_config_dirs fs_config_files
 
         cd "$OUT"
-        # Create temporary prop file for system_dlkm image
         system_dlkm_props_file="$(mktemp)"
         echo -e "system_dlkm_fs_type=ext4\n" >> ${system_dlkm_props_file}
         echo -e "use_dynamic_partition_size=true\n" >> ${system_dlkm_props_file}
@@ -574,7 +603,6 @@ runs:
         RAMDISK_STAGING_DIR="$VENDOR_BOOT_STAGING_DIR/ramdisk"
         RAMDISK_STAGING_MODULES="$RAMDISK_STAGING_DIR/lib/modules"
         DEPMOD_DIR="$RAMDISK_STAGING_DIR"
-        # After depmod delete this dir since ramdisk is flattened
         DEPMOD_DIR_ROOT="$VENDOR_BOOT_STAGING_DIR/ramdisk/lib/modules/$UNAME"
 
         if [ -d "$KERNEL_PLATFORM/build/build-tools/path" ]; then
@@ -583,10 +611,8 @@ runs:
           export PATH="$KERNEL_PLATFORM/prebuilts/kernel-build-tools/linux-x86/bin:$PATH"
         fi
 
-        # Create folder of highest depth amongst all
         mkdir -p "$DEPMOD_DIR_ROOT"
 
-        # add prebuilt files
         cd "$RAMDISK_STAGING_MODULES"
         curl -sL -o modules.load "$PREBUILTS/vendor_boot/vendor_ramdisk/modules.load"
         curl -sL -o modules.load.recovery "$PREBUILTS/vendor_boot/vendor_ramdisk/modules.load.recovery"
@@ -594,8 +620,6 @@ runs:
 
         ramdisk_modules="$(mktemp)"
         curl -sL "$PREBUILTS/vendor_boot/vendor_ramdisk/ramdisk_modules.txt" >> "$ramdisk_modules"
-        # copy modules to DEPMOD_DIR_ROOT
-        # NOTE: do depmod from DEPMOD_DIR
         cd "$MODULES_STAGING_ROOT"
         missing_modules=$(mktemp)
         while IFS= read -r module || [ -n "$module" ]; do
@@ -612,31 +636,25 @@ runs:
           fi
         done < "$ramdisk_modules"
 
-        # Apply depmod and copy required artifacts
         cd "$DEPMOD_DIR"
         depmod -F "$KBUILD_MIXED_TREE_DIR/System.map" -b . "$UNAME"
         cp -p "$DEPMOD_DIR_ROOT"/modules.{alias,dep,softdep} "$RAMDISK_STAGING_MODULES"
 
-        # Copy modules from depmod dir and delete the dir since vendor dlkm is flattened
         find "$DEPMOD_DIR_ROOT" -type f -name '*.ko' -exec cp {} "$RAMDISK_STAGING_MODULES/" \;
         rm -rf "$DEPMOD_DIR_ROOT"
 
-        # Add additional files that will go into ramdisk
         mkdir -p "$RAMDISK_STAGING_DIR/first_stage_ramdisk"
         cd "$RAMDISK_STAGING_DIR/first_stage_ramdisk"
         curl -sL -o fstab.qcom "$PREBUILTS/vendor_boot/vendor_ramdisk/first_stage_ramdisk/fstab.qcom"
 
         cd "$VENDOR_BOOT_STAGING_DIR"
 
-         # Create cpio compressed ramdisk using mkbootfs; use cpio like cyberknight777 did in his YAKB??
         mkbootfs "$RAMDISK_STAGING_DIR" > "$OUT/ramdisk.cpio"
 
         curl -sL -o "$OUT/vendor-bootconfig.img" "$PREBUILTS/vendor_boot/bootconfig"
 
-        # Note : prebuilt vendor cmdline already contains bootconfig , so no need to append it!
         VENDOR_CMDLINE=$(curl -sL "$PREBUILTS/vendor_boot/cmdline.txt")
 
-        # add fstab and create cpio compressed archive
         MKBOOTIMG_ARGS=(
           "--header_version" "4"
           "--pagesize" "4096"
@@ -686,7 +704,6 @@ runs:
         DLKM_STAGING_DIR="$OUT/vendor_dlkm_staging"
         DLKM_STAGING_ROOT="$DLKM_STAGING_DIR/lib/modules"
         DEPMOD_DIR="$DLKM_STAGING_DIR"
-        # After depmod delete this dir since vendor_dlkm is flattened
         DEPMOD_DIR_ROOT="$DLKM_STAGING_DIR/lib/modules/$UNAME"
 
         if [ -d "$KERNEL_PLATFORM/build/build-tools/path" ]; then
@@ -695,18 +712,14 @@ runs:
           export PATH="$KERNEL_PLATFORM/prebuilts/kernel-build-tools/linux-x86/bin:$PATH"
         fi
 
-        # Create folder of highest depth amongst all
         mkdir -p "$DEPMOD_DIR_ROOT"
 
-        # add prebuilt files
         cd "$DLKM_STAGING_ROOT"
         curl -sL -o modules.load "$PREBUILTS/vendor_dlkm/modules.load"
         curl -sL "$PREBUILTS/vendor_dlkm/modules.load.extra" >> modules.load
         curl -sL -o modules.blocklist "$PREBUILTS/vendor_dlkm/modules.blocklist"
         curl -sL -o system_dlkm.modules.blocklist "$PREBUILTS/vendor_dlkm/system_dlkm.modules.blocklist"
 
-        # copy modules to DEPMOD_DIR_ROOT
-        # NOTE: do depmod from DEPMOD_DIR
         cd "$MODULES_STAGING_ROOT"
         missing_modules=$(mktemp)
         while IFS= read -r module || [ -n "$module" ]; do
@@ -723,28 +736,23 @@ runs:
           fi
         done < "$DLKM_STAGING_ROOT/modules.load"
 
-        # NOTE: modules.order is not present in stock_dlkm, this modules.order is strictly for debugging purposes only !
         modules_order="$(mktemp)"
         cat "$MODULES_STAGING_ROOT/modules.order" >> "$modules_order"
-        # Append modules.order in the sequence we compiled them
         for MODULE in "${EXT_MODULES[@]}"; do
           find "$MODULES_STAGING_ROOT/extra/$MODULE" -type f -name 'modules.order*' -exec cat {} >> "$modules_order" \;
         done
         sed -i 's/.*\///g' "$modules_order"
         cp "$modules_order" "$ARTIFACTS_DIR_DEBUG/modules.order"
 
-        # Apply depmod and copy required artifacts
         cd "$DEPMOD_DIR"
         depmod -F "$KBUILD_MIXED_TREE_DIR/System.map" -b . "$UNAME"
         cp -p "$DEPMOD_DIR_ROOT"/modules.{alias,dep,softdep} "$DLKM_STAGING_ROOT"
 
-        # Copy modules from depmod dir and delete the dir since vendor dlkm is flattened
         find "$DEPMOD_DIR_ROOT" -type f -name '*.ko' -exec cp {} "$DLKM_STAGING_ROOT/" \;
         rm -rf "$DEPMOD_DIR_ROOT"
 
         cp "$DLKM_STAGING_ROOT/modules.load" "$OUT/vendor_dlkm.modules.load"
 
-        # add other files found in stock vendor_dlkm
         cd "$DLKM_STAGING_DIR"
         mkdir -p etc
         cd etc
@@ -752,7 +760,6 @@ runs:
         touch fs_config_dirs fs_config_files
 
         cd "$OUT"
-        # Create temporary prop file for vendor_dlkm image
         vendor_dlkm_props_file="$(mktemp)"
         echo -e "vendor_dlkm_fs_type=ext4\n" >> ${vendor_dlkm_props_file}
         echo -e "use_dynamic_partition_size=true\n" >> ${vendor_dlkm_props_file}
@@ -784,9 +791,7 @@ runs:
 
         echo "Removing unnecessary modules..."
         cd modules
-        # Download default module list
         curl -sL -o default_modules.txt https://raw.githubusercontent.com/terminal-beginner/kernel_patches/refs/heads/main/default_modules.txt
-        # Remove modules in the default list
 
         while IFS= read -r module; do
           if [ -e "$module" ]; then
@@ -808,6 +813,30 @@ runs:
         mkdir -p "$CONFIG/artifacts"
         find "$MODULES_SRC" -type f -name '*.ko' -print0 | xargs -0 zip -j "$MODULES_ZIP"
         echo "Packaged kernel modules to $MODULES_ZIP"
+
+    - name: ccache Post-Build Statistics
+      id: ccache_stats
+      if: ${{ inputs.clean_build != 'true' }}
+      shell: bash
+      run: |
+        set -euo pipefail
+        echo "::group::ccache stats"
+        export CCACHE_DIR="${{ env.CCACHE_DIR }}"
+        ccache -c || true
+        ccache --evict-older-than 10800s || true
+        STATS="$(ccache -s || true)"
+        CACHEABLE=$(echo "$STATS" | awk '/Cacheable calls:/ { match($0, /[0-9]+/); print substr($0, RSTART, RLENGTH) }' | head -n1)
+        HITS=$(echo "$STATS" | awk '/^[[:space:]]*Hits:/ { match($0, /[0-9]+/); print substr($0, RSTART, RLENGTH) }' | head -n1)
+        DIRECT=$(echo "$STATS" | awk '/Direct:/ { match($0, /[0-9]+/); print substr($0, RSTART, RLENGTH) }' | head -n1)
+        if [ "${CACHEABLE:-0}" -gt 0 ]; then
+          HIT_RATE=$(awk -v h="${HITS:-0}" -v c="$CACHEABLE" 'BEGIN{printf "%.1f", (h/c)*100}')
+          DIRECT_RATE=$(awk -v d="${DIRECT:-0}" -v c="$CACHEABLE" 'BEGIN{printf "%.1f", (d/c)*100}')
+        else
+          HIT_RATE="0.0"; DIRECT_RATE="0.0"
+        fi
+        echo "hit_rate=${HIT_RATE}%" >> "$GITHUB_OUTPUT"
+        echo "direct_rate=${DIRECT_RATE}%" >> "$GITHUB_OUTPUT"
+        echo "::endgroup::"
 
     - name: Format build time
       id: build_time
@@ -848,26 +877,52 @@ runs:
       shell: bash
       run: |
         set -euo pipefail
+        SUM_HEAD="🧩 **${MODEL} Modules** — ${KERNEL_FULL_VER} · ⏱ ${{ steps.build_time.outputs.duration }}"
+        if [ "${{ inputs.clean_build }}" != "true" ]; then
+          SUM_HEAD="${SUM_HEAD} · ccache ${{ steps.ccache_stats.outputs.hit_rate }}"
+        fi
+
         {
-          echo "### Kernel Modules Build Summary"
-          echo "----"
+          echo "<details>"
+          echo "<summary>${SUM_HEAD}</summary>"
           echo ""
-          echo "> [!NOTE]"
-          echo "> Model: ${{ env.MODEL }}"
+          echo "#### 🧩 Kernel Modules Build Summary"
           echo ""
-          echo "> [!IMPORTANT]"
-          echo "> - Vendor boot SHA256: ${{ steps.create_vendor_boot.outputs.vendor_boot_sha256 }}"
-          echo "> - Vendor dlkm SHA256: ${{ steps.create_vendor_dlkm.outputs.vendor_dlkm_sha256 }}"
+          echo "| Metric | Value |"
+          echo "|--------|-------|"
+          echo "| **Model** | ${MODEL} |"
+          echo "| **Kernel** | ${KERNEL_FULL_VER} |"
+          echo "| **OS Version** | ${OS_VERSION:-unknown} |"
+          echo "| **Optimization** | ${{ inputs.optimize_level }} |"
+          echo "| **LTO** | ${{ inputs.lto }} |"
+          echo "| **Clean Build** | ${{ inputs.clean_build }} |"
           echo ""
-          echo "> [!NOTE]"
-          echo "> - Modules build time: ${{ steps.build_time.outputs.duration }}"
-          echo "> - Oplus external modules build time: ${{ steps.build_time.outputs.duration_oplus_ext }}"
-          echo "> - Qcom external modules build time: ${{ steps.build_time.outputs.duration_qcom_ext }}"
-          echo "> - External dtbo build time: ${{ steps.build_time.outputs.duration_dtb_ext }}"
+          echo "#### ⏱ Build Times"
           echo ""
-          echo "> [!IMPORTANT]"
-          echo "> ## CCache Statistics :"
-          echo "> $(ccache -s -v )"
+          echo "| Stage | Time |"
+          echo "|-------|------|"
+          echo "| **Modules + DTBs** | ${{ steps.build_time.outputs.duration }} |"
+          echo "| **OPLUS external** | ${{ steps.build_time.outputs.duration_oplus_ext }} |"
+          echo "| **QCOM external** | ${{ steps.build_time.outputs.duration_qcom_ext }} |"
+          echo "| **DTB external** | ${{ steps.build_time.outputs.duration_dtb_ext }} |"
+          echo ""
+          echo "#### 📊 Hashes"
+          echo ""
+          echo "| Artifact | SHA256 |"
+          echo "|----------|--------|"
+          echo "| **Vendor boot** | \`${{ steps.create_vendor_boot.outputs.vendor_boot_sha256 }}\` |"
+          echo "| **Vendor DLKM** | \`${{ steps.create_vendor_dlkm.outputs.vendor_dlkm_sha256 }}\` |"
+          echo ""
+          if [ "${{ inputs.clean_build }}" != "true" ]; then
+            echo "#### 📈 ccache Metrics"
+            echo ""
+            echo "| Metric | Value |"
+            echo "|--------|-------|"
+            echo "| **Hit Rate** | ${{ steps.ccache_stats.outputs.hit_rate }} |"
+            echo "| **Direct Rate** | ${{ steps.ccache_stats.outputs.direct_rate }} |"
+            echo ""
+          fi
+          echo "</details>"
         } >> "$GITHUB_STEP_SUMMARY"
 
     - name: Cleanup old ccache & upload ccache log
@@ -876,30 +931,34 @@ runs:
         set -euo pipefail
 
         echo "[DEBUG] Uploading ccache logs"
-        cp "$CCACHE_LOGFILE" "$ARTIFACTS_DIR_DEBUG"
-
-        # Evict untouched ccache contents
-        ccache_end=$(date +%s)
-        ccache_delta=$(( ccache_end - ccache_start ))
-        if [[ "${{ inputs.evict_unused_ccache }}" == "true" ]]; then
-          echo "[DEBUG] Deleting ccache contents older than $ccache_delta seconds"
-          ccache --evict-older-than "${ccache_delta}s"
+        if [ -n "${CCACHE_LOGFILE:-}" ] && [ -f "${CCACHE_LOGFILE:-}" ]; then
+          cp "$CCACHE_LOGFILE" "$ARTIFACTS_DIR_DEBUG" || true
         fi
 
-        echo "[WARNING] Deleting old LTO cache"
-        gh cache delete LTO-${{ env.MODEL }}-modules-${{ inputs.optimize_level }}-${{ env.KERNEL_FULL_VER }} || true
+        if [ "${{ inputs.clean_build }}" != "true" ]; then
+          ccache_end=$(date +%s)
+          ccache_delta=$(( ccache_end - ccache_start ))
+          if [[ "${{ inputs.evict_unused_ccache }}" == "true" ]]; then
+            echo "[DEBUG] Deleting ccache contents older than $ccache_delta seconds"
+            ccache --evict-older-than "${ccache_delta}s" || true
+          fi
 
-        echo "[WARNING] Deleting old ccache"
-        gh cache delete ccache-${{ env.MODEL }}-modules-${{ inputs.optimize_level }}-${{ env.KERNEL_FULL_VER }} || true
+          echo "[WARNING] Deleting old LTO cache"
+          gh cache delete LTO-${{ env.MODEL }}-modules-${{ inputs.optimize_level }}-${{ env.KERNEL_FULL_VER }} || true
+
+          echo "[WARNING] Deleting old ccache"
+          gh cache delete ccache-${{ env.MODEL }}-modules-${{ inputs.optimize_level }}-${{ env.KERNEL_FULL_VER }} || true
+        fi
 
     - name: Save ccache
+      if: ${{ inputs.clean_build != 'true' }}
       uses: actions/cache/save@v5
       with:
         path: ${{ env.CCACHE_DIR }}
         key: ccache-${{ env.MODEL }}-modules-${{ inputs.optimize_level }}-${{ env.KERNEL_FULL_VER }}-${{ inputs.lto }}_LTO
 
     - name: Save LTO cache
-      if: ${{ inputs.lto == 'Thin'}}
+      if: ${{ inputs.lto == 'Thin' && inputs.clean_build != 'true' }}
       uses: actions/cache/save@v5
       with:
         path: ${{ env.LDCACHE_DIR }}
