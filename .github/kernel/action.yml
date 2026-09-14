@@ -1317,6 +1317,88 @@ runs:
         fi
         echo "Kernel branding applied ✅"
         echo "::endgroup::"
+        
+    - name: Apply Fake Config Patch
+      shell: bash
+      run: |
+        set -euo pipefail
+        echo "::group::Apply Fake Config patch"
+        cd "$COMMON"
+
+        if [ ! -f "$WILD_KERNEL_PATCHES/common/fake_config.patch" ]; then
+          echo "::warning::fake_config.patch not found in WildKernels patches, skipping"
+          echo "::endgroup::"; exit 0
+        fi
+
+        # Apply patch to kernel/Makefile
+        if grep -q "CONFIG_FAKE_DISABLE" kernel/Makefile 2>/dev/null; then
+          echo "Fake config patch already applied, skipping."
+        else
+          patch -p1 --forward < "$WILD_KERNEL_PATCHES/common/fake_config.patch" || {
+            echo "::warning::Fake config patch failed to apply cleanly"
+          }
+        fi
+
+        # Build the CONFIG_FAKE_DISABLE list — all our extra configs to hide from /proc/config.gz
+        FAKE_LIST=""
+        FAKE_LIST+=" CONFIG_KSU"
+        FAKE_LIST+=" CONFIG_KSU_SUSFS"
+        FAKE_LIST+=" CONFIG_KSU_MULTI_MANAGER_SUPPORT"
+        FAKE_LIST+=" CONFIG_KSU_TOOLKIT_SUPPORT"
+        FAKE_LIST+=" CONFIG_KSU_SUSFS_HAS_MAGIC_MOUNT"
+        FAKE_LIST+=" CONFIG_KSU_SUSFS_SUS_PATH"
+        FAKE_LIST+=" CONFIG_KSU_SUSFS_SUS_MOUNT"
+        FAKE_LIST+=" CONFIG_KSU_SUSFS_AUTO_ADD_SUS_KSU_DEFAULT_MOUNT"
+        FAKE_LIST+=" CONFIG_KSU_SUSFS_AUTO_ADD_SUS_BIND_MOUNT"
+        FAKE_LIST+=" CONFIG_KSU_SUSFS_SUS_KSTAT"
+        FAKE_LIST+=" CONFIG_KSU_SUSFS_TRY_UMOUNT"
+        FAKE_LIST+=" CONFIG_KSU_SUSFS_AUTO_ADD_TRY_UMOUNT_FOR_BIND_MOUNT"
+        FAKE_LIST+=" CONFIG_KSU_SUSFS_SPOOF_UNAME"
+        FAKE_LIST+=" CONFIG_KSU_SUSFS_ENABLE_LOG"
+        FAKE_LIST+=" CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS"
+        FAKE_LIST+=" CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG"
+        FAKE_LIST+=" CONFIG_KSU_SUSFS_OPEN_REDIRECT"
+        FAKE_LIST+=" CONFIG_KSU_SUSFS_SUS_MAP"
+        FAKE_LIST+=" CONFIG_NOMOUNT"
+        FAKE_LIST+=" CONFIG_BBG"
+        FAKE_LIST+=" CONFIG_TCP_CONG_BBR"
+        FAKE_LIST+=" CONFIG_TCP_CONG_BBR3"
+        FAKE_LIST+=" CONFIG_TCP_CONG_ROCCET"
+        FAKE_LIST+=" CONFIG_IP6_NF_NAT"
+        FAKE_LIST+=" CONFIG_IP6_NF_TARGET_MASQUERADE"
+        FAKE_LIST+=" CONFIG_IP_NF_TARGET_TTL"
+        FAKE_LIST+=" CONFIG_IP6_NF_TARGET_HL"
+        FAKE_LIST+=" CONFIG_IP6_NF_MATCH_HL"
+        FAKE_LIST+=" CONFIG_IP_SET"
+        FAKE_LIST+=" CONFIG_IP_SET_MAX"
+        FAKE_LIST+=" CONFIG_BPF_STREAM_PARSER"
+        FAKE_LIST+=" CONFIG_NTSYNC"
+        FAKE_LIST+=" CONFIG_LRU_GEN_ENABLED"
+        FAKE_LIST+=" CONFIG_SYSVIPC"
+        FAKE_LIST+=" CONFIG_PID_NS"
+        FAKE_LIST+=" CONFIG_USER_NS"
+        FAKE_LIST+=" CONFIG_POSIX_MQUEUE"
+        FAKE_LIST+=" CONFIG_DEVTMPFS"
+        FAKE_LIST+=" CONFIG_TMPFS_XATTR"
+        FAKE_LIST+=" CONFIG_TMPFS_POSIX_ACL"
+        FAKE_LIST+=" CONFIG_NETFILTER_XT_MATCH_ADDRTYPE"
+        FAKE_LIST+=" CONFIG_NETFILTER_XT_SET"
+        FAKE_LIST+=" CONFIG_NETFILTER_XT_TARGET_REJECT"
+        FAKE_LIST+=" CONFIG_NETFILTER_XT_TARGET_LOG"
+        FAKE_LIST+=" CONFIG_NETFILTER_XT_MATCH_RECENT"
+        FAKE_LIST+=" CONFIG_MQ_IOSCHED_ADIOS"
+        FAKE_LIST+=" CONFIG_MQ_IOSCHED_DEFAULT_ADIOS"
+
+        # Trim leading space
+        FAKE_LIST="${FAKE_LIST# }"
+
+        echo "Configs to fake-hide:"
+        echo "$FAKE_LIST" | tr ' ' '\n'
+        echo ""
+
+        echo "FAKE_DISABLE_LIST=$FAKE_LIST" >> "$GITHUB_ENV"
+        echo "✅ Fake config setup complete"
+        echo "::endgroup::"
 
     - name: Build Kernel
       id: build_kernel
@@ -1434,11 +1516,17 @@ runs:
 
         make "${MAKE_FLAGS[@]}" O="$OUT" olddefconfig
 
+                FAKE_FLAG=""
+        if [ -n "${FAKE_DISABLE_LIST:-}" ]; then
+          FAKE_FLAG="CONFIG_FAKE_DISABLE=${FAKE_DISABLE_LIST}"
+          echo "🎭 Using fake config disable list"
+        fi
+
         if [[ "$BUILD_TYPE" == "Mixed Build" || "$BUILD_TYPE" == "Modules Only" ]]; then
-          make -j$(nproc --all) "${MAKE_FLAGS[@]}"  O="$OUT" Image modules
+          make -j$(nproc --all) "${MAKE_FLAGS[@]}" O="$OUT" ${FAKE_FLAG} Image modules
           make -j$(nproc --all) "${MAKE_FLAGS[@]}" O="$OUT" INSTALL_MOD_STRIP=1 INSTALL_MOD_PATH="$INSTALL_MOD_PATH" modules_install
         else
-          make -j$(nproc --all) "${MAKE_FLAGS[@]}"  O="$OUT" Image
+          make -j$(nproc --all) "${MAKE_FLAGS[@]}" O="$OUT" ${FAKE_FLAG} Image
         fi
 
         echo "duration=$SECONDS" >> "$GITHUB_ENV"
