@@ -22,30 +22,26 @@
 #
 # Requires: DYNAMIC_CACHE_DIR env var (e.g. ${OUT_DIR}/dynamic_cache)
 #
+# FIXES:
+#   - Parallel hashing now uses per-process temp files (no interleaved
+#     writes to a shared stdout). The previous `xargs -P | sha256sum > file`
+#     could interleave partial lines when output exceeded PIPE_BUF,
+#     producing malformed "<hash>  <path>" pairs and downstream
+#     `touch: '<workspace>/<hash>  <path>': No such file` errors.
+#   - Validate hash format before parsing (skip malformed lines).
+#   - Force absolute paths (defensive against relative sha256sum output).
+#   - Skip files that vanished between find and touch.
+#   - touch -c to avoid creating missing files.
+#   - Fixed duplicate "--" typo in changed-list touch invocation.
+#   - Non-fatal on transient fs races (|| true on xargs touch).
+#
 # NOTE on dates: _freeze is a fixed date safely in the past (never
 # decays). "Changed" files are stamped with the REAL current time, not a
 # fixed constant — a fixed future constant would eventually be overtaken
-# by real build-output timestamps and silently break (this happened: the
-# original NEW_CONST=2026-01-01 is already in the past as of real "now").
-# Real "now" is guaranteed newer than any previously-cached build output,
-# in every future run, with no swap/rotation logic required.
-#
-# Note : NEW_CONST=2026-01-01, was part of the legacy/previous
-#       implementation of this script (which I nuked ofc 🌚)
-
-# Disclaimer: If you're using this script, add me as author in the commit that added/used/referenced
-#             this script, oth you're GAY.
-#
-# How to : stage all changes using : git add .
-#          commit : git commit -s --author "nullptr_t <nullptr.oss@gmail.com>"
-#
-# And if you're reading this after creating the commit, use git rebase.
-# git rebase docs : https://git-scm.com/docs/git-rebase
-
+# by real build-output timestamps and silently break.
 
 set -euo pipefail
 
-# Extracted this from kali's default colorscheme
 red="\033[38;2;236;1;1m"
 blue="\033[38;2;39;127;255m"
 green="\e[38;2;71;212;185m"
@@ -106,18 +102,39 @@ is_fresh_cache=false
 tmp_hash="$(mktemp)"
 raw_hash="$(mktemp)"
 err_log="$(mktemp)"
-trap 'rm -f "${tmp_hash}" "${raw_hash}" "${err_log}"' EXIT
+changed_list="$(mktemp)"
+unchanged_list="$(mktemp)"
+parts_dir="$(mktemp -d)"
+cleanup() {
+  rm -f "${tmp_hash}" "${raw_hash}" "${err_log}" "${changed_list}" "${unchanged_list}"
+  rm -rf "${parts_dir}"
+}
+trap cleanup EXIT
 
-# Batched + parallel hashing: -n64 files per sha256sum invocation, -P across cores.
+# --- Parallel + safe hashing ---
+# Each worker writes to its own temp file (guaranteed unique via mktemp),
+# so concurrent sha256sum outputs never interleave. We concatenate after.
+export PARTS_DIR="${parts_dir}"
+
 set +o pipefail
 find "${root}" -type f -not -path '*/.git/*' -print0 | \
-  xargs -0 -P "$(nproc)" -n 64 sha256sum > "${raw_hash}" 2> "${err_log}"
+  xargs -0 -P "$(nproc)" -n 64 bash -c '
+    part="$(mktemp "${PARTS_DIR}/part.XXXXXXXX")"
+    sha256sum "$@" > "${part}" 2>>"${PARTS_DIR}/.errors" || true
+  ' _
 xargs_status=$?
 set -o pipefail
 
-if [[ -s "${err_log}" ]]; then
+# Concatenate worker output. Order does not matter for our diff logic.
+if compgen -G "${PARTS_DIR}/part.*" > /dev/null; then
+  cat "${PARTS_DIR}"/part.* > "${raw_hash}"
+else
+  : > "${raw_hash}"
+fi
+
+if [[ -s "${PARTS_DIR}/.errors" ]]; then
   echo -e "${_name} [${blue}${key}${end}]   ${yellow}warning: some files could not be hashed:${end}"
-  sed "s/^/${_name}   /" "${err_log}"
+  sed "s/^/${_name}   /" "${PARTS_DIR}/.errors"
 fi
 
 if [[ "${xargs_status}" -gt 1 ]]; then
@@ -128,24 +145,35 @@ if ${is_fresh_cache}; then
   echo -e "${_name} [${blue}${key}${end}]   ${yellow}fresh cache — hashing all files, per-file diff suppressed${end}"
 fi
 
+# --- Diff + touch ---
 changed=0
 unchanged=0
-changed_list="$(mktemp)"
-unchanged_list="$(mktemp)"
-trap 'rm -f "${tmp_hash}" "${raw_hash}" "${err_log}" "${changed_list}" "${unchanged_list}"' EXIT
-
 while IFS= read -r line; do
+  [[ -z "${line}" ]] && continue
+
   h="${line%%  *}"
   f="${line#*  }"
+
+  # Skip malformed lines (no two-space separator, or invalid hash)
+  [[ "${h}" =~ ^[0-9a-fA-F]{64}$ ]] || continue
+  [[ -n "${f}" && "${f}" != "${line}" ]] || continue
+
+  # Force absolute path (defensive)
+  if [[ "${f}" != /* ]]; then
+    f="${root}/${f}"
+  fi
+
+  # Skip if the file vanished between find and now
+  [[ -e "${f}" ]] || continue
+
   rel="${f#"${root}"/}"
-  echo -e "${rel}\t${h}" >> "${tmp_hash}"
+  printf '%s\t%s\n' "${rel}" "${h}" >> "${tmp_hash}"
 
   prev="${BASELINE[${rel}]:-}"
   if [[ "${h}" == "${prev}" ]]; then
     printf '%s\0' "${f}" >> "${unchanged_list}"
     unchanged=$((unchanged + 1))
   else
-    # touch with real current time instead of fixed new time
     printf '%s\0' "${f}" >> "${changed_list}"
     changed=$((changed + 1))
     if ! ${is_fresh_cache}; then
@@ -158,12 +186,13 @@ while IFS= read -r line; do
   fi
 done < "${raw_hash}"
 
-# I hope this will speed up the cache time from 3m xD ; TODO: maybe change sha256 to something lightweight coz it's a bit overkill imo
-[[ -s "${unchanged_list}" ]] && xargs -0 -P "$(nproc)" -n 200 touch -t "${_freeze}" -- < "${unchanged_list}"
-[[ -s "${changed_list}"   ]] && xargs -0 -P "$(nproc)" -n 200 touch --                -- < "${changed_list}"
-
+# touch -c: do not create missing files. "--" ends option parsing.
+# || true: don't fail the whole script on transient fs races.
+[[ -s "${unchanged_list}" ]] && xargs -0 -P "$(nproc)" -n 200 touch -c -t "${_freeze}" -- < "${unchanged_list}" || true
+[[ -s "${changed_list}"   ]] && xargs -0 -P "$(nproc)" -n 200 touch -c -- < "${changed_list}" || true
 
 mv -f "${tmp_hash}" "${hash}"
 trap - EXIT
+cleanup
 
 echo -e "${_name} [${blue}${key}${end}] ${red}${changed}${end} file(s) changed, ${green}${unchanged}${end} unchanged"
