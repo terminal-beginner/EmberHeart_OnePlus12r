@@ -49,20 +49,10 @@ inputs:
     type: string
     default: main
   patches_ref:
-    description: 'Bouteillepleine/kernel_patches branch/ref (for NoMount/ADIOS)'
+    description: 'Bouteillepleine/kernel_patches branch/ref (for NoMount scripts)'
     required: false
     type: string
     default: main
-  use_adios:
-    description: 'Enable ADIOS I/O scheduler support'
-    required: false
-    type: string
-    default: 'false'
-  use_ntsync:
-    description: 'Enable NTSync support (patch availability varies by kernel version)'
-    required: false
-    type: string
-    default: 'false'
   use_unicode_fix:
     description: 'Enable Unicode bypass fix'
     required: false
@@ -205,7 +195,9 @@ runs:
       if: ${{ inputs.clean_build != 'true' }}
       uses: actions/cache/restore@v5
       with:
-        path: ${{ env.CCACHE_DIR }}
+        path: |
+          ${{ env.COMMON }}/out
+          ${{ env.CCACHE_DIR }}
         key: ccache-${{ env.MODEL }}-kernel-${{ inputs.optimize_level }}-${{ env.KERNEL_FULL_VER }}-${{ inputs.lto }}_LTO
         restore-keys: |
           ccache-${{ env.MODEL }}-kernel-${{ inputs.optimize_level }}-${{ env.KERNEL_FULL_VER }}
@@ -232,8 +224,8 @@ runs:
         git clone --depth=1 https://github.com/WildKernels/kernel_patches.git
         git clone --depth=1 https://github.com/terminal-beginner/kernel_patches.git my_patches
 
-    - name: Clone Bouteillepleine patches (ADIOS / NoMount)
-      if: ${{ inputs.use_adios == 'true' || inputs.use_nomount == 'true' }}
+    - name: Clone Bouteillepleine patches (NoMount)
+      if: ${{ inputs.use_nomount == 'true' }}
       shell: bash
       run: |
         set -euo pipefail
@@ -254,7 +246,6 @@ runs:
           exit 1
         fi
         echo "BOUTEILLE_KERNEL_PATCHES=$GITHUB_WORKSPACE/bouton_kernel_patches" >> "$GITHUB_ENV"
-        echo "ADIOS_PATCHES_FOLDER=$GITHUB_WORKSPACE/bouton_kernel_patches/experimental" >> "$GITHUB_ENV"
         echo "✅ Bouteillepleine patches cloned"
         echo "::endgroup::"
 
@@ -407,14 +398,6 @@ runs:
         echo "ksun_tag=${KSUN_TAG}" >> "$GITHUB_OUTPUT"
         echo "KernelSU (${{ inputs.ksu_type }}) Version: $KSU_VERSION"
         echo "KernelSU added (commit: ${KSUN_COMMIT_SHA}) ✅"
-
-        # MTIME: normalize KSU directory mtimes for ccache consistency
-        if [ -n "${MTIME_CACHE:-}" ] && [ -x "$MTIME_CACHE" ]; then
-          echo "::group::MTIME -t for KSU dir"
-          ( "$MTIME_CACHE" -t -d "$KERNEL_PLATFORM/$KSU_DIR_NAME" -k ksun ) || echo "::warning::MTIME set failed for KSU"
-          echo "::endgroup::"
-        fi
-
         echo "::endgroup::"
 
     - name: Apply SUSFS Patches (KSU_NEXT only)
@@ -619,15 +602,6 @@ runs:
         fi
 
         echo "SuSFS added ✅"
-
-        # MTIME: normalize common + KernelSU-Next dirs for ccache consistency
-        if [ -n "${MTIME_CACHE:-}" ] && [ -x "$MTIME_CACHE" ]; then
-          echo "::group::MTIME -t for SUSFS patched dirs"
-          ( "$MTIME_CACHE" -t -d "$COMMON" -k gki-kernel ) || echo "::warning::MTIME set failed for common"
-          ( "$MTIME_CACHE" -t -d "$KERNEL_PLATFORM/KernelSU-Next" -k ksun ) || echo "::warning::MTIME set failed for KSU"
-          echo "::endgroup::"
-        fi
-
         echo "::endgroup::"
 
     - name: Apply NoMount (hookless) — RSKSU only
@@ -646,7 +620,6 @@ runs:
           exit 1
         fi
 
-        # The script expects these specific env var names
         export COMMON_KERNEL_FOLDER="$COMMON"
         export KERNEL_PLATFORM_FOLDER="$KERNEL_PLATFORM"
         export BOUTEILLE_KERNEL_PATCHES_FOLDER="$BOUTEILLE_KERNEL_PATCHES"
@@ -664,16 +637,13 @@ runs:
         echo "BOUTEILLE_KERNEL_PATCHES_FOLDER=$BOUTEILLE_KERNEL_PATCHES_FOLDER"
         echo "NOMOUNT_REF=$NOMOUNT_REF"
 
-        # Apply hookless (NoMount engine)
         echo "--- Applying hookless ---"
         bash "$BOUTEILLE_KERNEL_PATCHES/scripts/apply_nomount_stack.sh" hookless
         bash "$BOUTEILLE_KERNEL_PATCHES/scripts/apply_nomount_stack.sh" record-version
 
-        # Apply ghost (task-level hiding)
         echo "--- Applying ghost ---"
         bash "$BOUTEILLE_KERNEL_PATCHES/scripts/apply_nomount_stack.sh" ghost || echo "::warning::ghost failed, continuing"
 
-        # Extract NMVER from the copied header
         NM_HDR="$COMMON/fs/nomount.h"
         NMVER="unknown"
         if [ -f "$NM_HDR" ]; then
@@ -682,17 +652,6 @@ runs:
         echo "NMVER=${NMVER:-unknown}" >> "$GITHUB_ENV"
         echo "nomount_version=${NMVER:-unknown}" >> "$GITHUB_OUTPUT"
         echo "✅ NoMount + Ghost applied (version: ${NMVER:-unknown})"
-
-        # MTIME: normalize NoMount dirs for ccache consistency
-        if [ -n "${MTIME_CACHE:-}" ] && [ -x "$MTIME_CACHE" ]; then
-          echo "::group::MTIME -t for NoMount dirs"
-          ( "$MTIME_CACHE" -t -d "$COMMON" -k gki-kernel ) || echo "::warning::MTIME set failed for common"
-          if [ -d "$GITHUB_WORKSPACE/nomount_suite" ]; then
-            ( "$MTIME_CACHE" -t -d "$GITHUB_WORKSPACE/nomount_suite" -k nomount ) || echo "::warning::MTIME set failed for nomount"
-          fi
-          echo "::endgroup::"
-        fi
-
         echo "::endgroup::"
 
     - name: Apply Unicode Fix
@@ -742,17 +701,6 @@ runs:
         ./scripts/config --file arch/arm64/configs/gki_defconfig --enable CONFIG_BBG
         sed -i '/^config LSM$/,/^help$/{ /^[[:space:]]*default/ { /baseband_guard/! s/selinux/selinux,baseband_guard/ } }' security/Kconfig
         echo "BBG LSM added ✅"
-
-        # MTIME: normalize BBG dir for ccache consistency
-        if [ -n "${MTIME_CACHE:-}" ] && [ -x "$MTIME_CACHE" ]; then
-          echo "::group::MTIME -t for BBG dir"
-          if [ -d "$KERNEL_PLATFORM/Baseband-guard" ]; then
-            ( "$MTIME_CACHE" -t -d "$KERNEL_PLATFORM/Baseband-guard" -k bbg ) || echo "::warning::MTIME set failed for BBG"
-          fi
-          ( "$MTIME_CACHE" -t -d "$COMMON" -k gki-kernel ) || echo "::warning::MTIME set failed for common"
-          echo "::endgroup::"
-        fi
-
         echo "::endgroup::"
 
     - name: Apply KSUN Hooks
@@ -814,46 +762,6 @@ runs:
           --enable CONFIG_KSU_SUSFS_OPEN_REDIRECT \
           --enable CONFIG_KSU_SUSFS_SUS_MAP \
           --disable CONFIG_KSU_SUSFS_SUS_SU
-
-    - name: Add NTSync (patch availability check)
-      if: ${{ inputs.use_ntsync == 'true' }}
-      shell: bash
-      run: |
-        set -euo pipefail
-        echo "::group::Add NTSync"
-        cd "$COMMON"
-        NTSYNC_FOLDER="$WILD_KERNEL_PATCHES/common/ntsync"
-        GKI_KEY="${{ env.ANDROID_RELEASE }}-${{ env.KERNEL_VER }}"
-        OS_VER_TAG="A$(echo "${{ env.ANDROID_RELEASE }}" | sed 's/^android//')"
-
-        if [ ! -d "$NTSYNC_FOLDER" ]; then
-          echo "::warning::ntsync folder not found in WildKernels patches, skipping"
-          echo "::endgroup::"; exit 0
-        fi
-
-        NTSYNC_PATCH=""
-        if [ -f "$NTSYNC_FOLDER/ntsync_compat_${GKI_KEY}_${OS_VER_TAG}.patch" ]; then
-          NTSYNC_PATCH="$NTSYNC_FOLDER/ntsync_compat_${GKI_KEY}_${OS_VER_TAG}.patch"
-        elif [ -f "$NTSYNC_FOLDER/ntsync_compat_${GKI_KEY}.patch" ]; then
-          NTSYNC_PATCH="$NTSYNC_FOLDER/ntsync_compat_${GKI_KEY}.patch"
-        else
-          echo "::warning::No ntsync patch found for ${GKI_KEY} (${OS_VER_TAG}). Available patches:"
-          ls "$NTSYNC_FOLDER" 2>/dev/null | head -n 20 || true
-          echo "::endgroup::"; exit 0
-        fi
-
-        echo "Using patch: $(basename $NTSYNC_PATCH)"
-        if [ "${{ env.ANDROID_RELEASE }}" = "android16" ] && [ "${{ env.KERNEL_VER }}" = "6.12" ]; then
-          rm -f include/uapi/linux/ntsync.h
-          rm -f drivers/misc/ntsync.c
-        fi
-        patch -p1 --forward < "$NTSYNC_PATCH" || true
-        if [ -f "$NTSYNC_FOLDER/ntsync_base.patch" ]; then
-          patch -p1 --forward < "$NTSYNC_FOLDER/ntsync_base.patch" || true
-        fi
-        echo "CONFIG_NTSYNC=y" >> "$COMMON/arch/arm64/configs/gki_defconfig"
-        echo "✅ NTSync applied"
-        echo "::endgroup::"
 
     - name: Add Oneplus BBR
       shell: bash
@@ -1163,53 +1071,6 @@ runs:
         echo "✅ Vendor debloat applied: $RESULT_LIST"
         echo "::endgroup::"
 
-    - name: Add ADIOS I/O Scheduler
-      if: ${{ inputs.use_adios == 'true' }}
-      shell: bash
-      run: |
-        set -euo pipefail
-        echo "::group::Add ADIOS I/O Scheduler"
-        cd "$COMMON"
-        if [ -z "${ADIOS_PATCHES_FOLDER:-}" ] || [ ! -d "$ADIOS_PATCHES_FOLDER" ]; then
-          echo "::warning::ADIOS patches folder not available, skipping"
-          echo "::endgroup::"; exit 0
-        fi
-        PATCH_FILE=""
-        case "${KERNEL_VER}" in
-          "6.12") PATCH_FILE="$ADIOS_PATCHES_FOLDER/adios_ioscheduler_6.12.patch" ;;
-          "6.6")  PATCH_FILE="$ADIOS_PATCHES_FOLDER/adios_ioscheduler_6.6.patch" ;;
-          "5.15") PATCH_FILE="$ADIOS_PATCHES_FOLDER/adios_ioscheduler_5.15.patch" ;;
-          "5.10") PATCH_FILE="$ADIOS_PATCHES_FOLDER/adios_ioscheduler_5.10.patch" ;;
-          "6.1")
-            if [ "${TKERNEL_VER:-}" = "6.1.115" ] && { [[ "${BRANCH:-}" == *mt* ]] || [[ "${SOC:-}" == *dimensity* ]] || [[ "${SOC:-}" == *mediatek* ]] || [[ "${SOC:-}" == *mt* ]]; }; then
-              PATCH_FILE="$ADIOS_PATCHES_FOLDER/adios_ioscheduler_6.1_mt6989.patch"
-            elif [ "${TKERNEL_VER:-}" = "6.1.57" ] || [ "${TKERNEL_VER:-}" = "6.1.75" ]; then
-              PATCH_FILE="$ADIOS_PATCHES_FOLDER/adios_ioscheduler_6.1_old.patch"
-            else
-              PATCH_FILE="$ADIOS_PATCHES_FOLDER/adios_ioscheduler_6.1.patch"
-            fi
-            ;;
-          *) echo "::warning::ADIOS not supported on ${KERNEL_VER}"; echo "::endgroup::"; exit 0 ;;
-        esac
-        if [ ! -f "$PATCH_FILE" ]; then
-          echo "::warning::ADIOS patch not found: $PATCH_FILE"
-          echo "::endgroup::"; exit 0
-        fi
-        if [ -f "block/adios.c" ]; then
-          echo "ADIOS already present, skipping patch."
-        else
-          patch -p1 --ignore-whitespace -F 3 < "$PATCH_FILE" || true
-        fi
-        DEFCONFIG="$COMMON/arch/arm64/configs/gki_defconfig"
-        if ! grep -q "^CONFIG_MQ_IOSCHED_ADIOS=" "$DEFCONFIG"; then
-          {
-            echo "CONFIG_MQ_IOSCHED_ADIOS=y"
-            echo "CONFIG_MQ_IOSCHED_DEFAULT_ADIOS=y"
-          } >> "$DEFCONFIG"
-        fi
-        echo "✅ ADIOS setup completed"
-        echo "::endgroup::"
-
     - name: Add TTL Target Support
       shell: bash
       run: |
@@ -1317,7 +1178,7 @@ runs:
         fi
         echo "Kernel branding applied ✅"
         echo "::endgroup::"
-        
+
     - name: Apply Fake Config Patch
       shell: bash
       run: |
@@ -1330,7 +1191,6 @@ runs:
           echo "::endgroup::"; exit 0
         fi
 
-        # Apply patch to kernel/Makefile
         if grep -q "CONFIG_FAKE_DISABLE" kernel/Makefile 2>/dev/null; then
           echo "Fake config patch already applied, skipping."
         else
@@ -1339,7 +1199,6 @@ runs:
           }
         fi
 
-        # Build the CONFIG_FAKE_DISABLE list — all our extra configs to hide from /proc/config.gz
         FAKE_LIST=""
         FAKE_LIST+=" CONFIG_KSU"
         FAKE_LIST+=" CONFIG_KSU_SUSFS"
@@ -1372,7 +1231,6 @@ runs:
         FAKE_LIST+=" CONFIG_IP_SET"
         FAKE_LIST+=" CONFIG_IP_SET_MAX"
         FAKE_LIST+=" CONFIG_BPF_STREAM_PARSER"
-        FAKE_LIST+=" CONFIG_NTSYNC"
         FAKE_LIST+=" CONFIG_LRU_GEN_ENABLED"
         FAKE_LIST+=" CONFIG_SYSVIPC"
         FAKE_LIST+=" CONFIG_PID_NS"
@@ -1386,10 +1244,7 @@ runs:
         FAKE_LIST+=" CONFIG_NETFILTER_XT_TARGET_REJECT"
         FAKE_LIST+=" CONFIG_NETFILTER_XT_TARGET_LOG"
         FAKE_LIST+=" CONFIG_NETFILTER_XT_MATCH_RECENT"
-        FAKE_LIST+=" CONFIG_MQ_IOSCHED_ADIOS"
-        FAKE_LIST+=" CONFIG_MQ_IOSCHED_DEFAULT_ADIOS"
 
-        # Trim leading space
         FAKE_LIST="${FAKE_LIST# }"
 
         echo "Configs to fake-hide:"
@@ -1497,16 +1352,17 @@ runs:
 
         make "${MAKE_FLAGS[@]}" O="$OUT" "${CONFIGS[@]}"
 
+        : > "$COMMON/.scmversion"
+        ./scripts/config --file "$OUT/.config" \
+          --disable LOCALVERSION_AUTO
+        sed -i 's/scm_version="$(scm_version --short)"/scm_version=""/' scripts/setlocalversion
+
         if [ -n "${CUSTOM_LOCALVERSION:-}" ]; then
-          : > "$COMMON/.scmversion"
           ./scripts/config --file "$OUT/.config" \
-            --set-str LOCALVERSION "${CUSTOM_LOCALVERSION}" \
-            --disable LOCALVERSION_AUTO
-          sed -i 's/scm_version="$(scm_version --short)"/scm_version=""/' scripts/setlocalversion
-          echo "[INFO] Custom branding applied to config"
+            --set-str LOCALVERSION "${CUSTOM_LOCALVERSION}"
+          echo "[INFO] Custom branding applied: ${CUSTOM_LOCALVERSION}"
         else
-          ./scripts/config --file "$OUT/.config" \
-            --enable LOCALVERSION_AUTO
+          echo "[INFO] Keeping default LOCALVERSION (Bright-Star)"
         fi
 
         echo "kernel_release=$(make "${MAKE_FLAGS[@]}" O="$OUT" -s kernelrelease)" >> "$GITHUB_ENV"
@@ -1516,17 +1372,17 @@ runs:
 
         make "${MAKE_FLAGS[@]}" O="$OUT" olddefconfig
 
-                FAKE_FLAG=""
+        FAKE_CFG_ARG=()
         if [ -n "${FAKE_DISABLE_LIST:-}" ]; then
-          FAKE_FLAG="CONFIG_FAKE_DISABLE=${FAKE_DISABLE_LIST}"
           echo "🎭 Using fake config disable list"
+          FAKE_CFG_ARG=("CONFIG_FAKE_DISABLE=${FAKE_DISABLE_LIST}")
         fi
 
         if [[ "$BUILD_TYPE" == "Mixed Build" || "$BUILD_TYPE" == "Modules Only" ]]; then
-          make -j$(nproc --all) "${MAKE_FLAGS[@]}" O="$OUT" ${FAKE_FLAG} Image modules
+          make -j$(nproc --all) "${MAKE_FLAGS[@]}" O="$OUT" "${FAKE_CFG_ARG[@]}" Image modules
           make -j$(nproc --all) "${MAKE_FLAGS[@]}" O="$OUT" INSTALL_MOD_STRIP=1 INSTALL_MOD_PATH="$INSTALL_MOD_PATH" modules_install
         else
-          make -j$(nproc --all) "${MAKE_FLAGS[@]}" O="$OUT" ${FAKE_FLAG} Image
+          make -j$(nproc --all) "${MAKE_FLAGS[@]}" O="$OUT" "${FAKE_CFG_ARG[@]}" Image
         fi
 
         echo "duration=$SECONDS" >> "$GITHUB_ENV"
@@ -1546,6 +1402,20 @@ runs:
         cp "$OUT/vmlinux" "$ARTIFACTS_DIR_DEBUG"
 
         echo "::endgroup::"
+
+    - name: Cleanup old build cache
+      if: ${{ env.BUILD_TYPE == 'Kernel Only' }}
+      shell: bash
+      run: |
+        echo "WARNING: Deleting build cache..." >&2
+        gh cache delete cache-${{ env.MODEL }}-${{ env.OS_SHORT }}-${{ inputs.optimize_level }}-${{ inputs.kernel_uname }}-${{ env.KERNEL_VERSION }} || true
+
+    - name: Save build cache
+      if: ${{ env.BUILD_TYPE == 'Kernel Only' }}
+      uses: actions/cache/save@v5
+      with:
+        path: ${{ env.OUT_DIR }}
+        key: cache-${{ env.MODEL }}-${{ env.OS_SHORT }}-${{ inputs.optimize_level }}-${{ inputs.kernel_uname }}-${{ env.KERNEL_VERSION }}
 
     - name: ccache Post-Build Statistics
       id: ccache_stats
@@ -1888,7 +1758,9 @@ runs:
       if: ${{ inputs.clean_build != 'true' }}
       uses: actions/cache/save@v5
       with:
-        path: ${{ env.CCACHE_DIR }}
+        path: |
+          ${{ env.CCACHE_DIR }}
+          ${{ env.COMMON }}/out
         key: ccache-${{ env.MODEL }}-kernel-${{ inputs.optimize_level }}-${{ env.KERNEL_FULL_VER }}-${{ inputs.lto }}_LTO
 
     - name: Save LTO cache

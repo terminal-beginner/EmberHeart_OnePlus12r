@@ -131,7 +131,9 @@ runs:
       if: ${{ inputs.clean_build != 'true' }}
       uses: actions/cache/restore@v5
       with:
-        path: ${{ env.CCACHE_DIR }}
+        path: |
+          ${{ env.CCACHE_DIR }}
+          ${{ env.MSM }}/out
         key: ccache-${{ env.MODEL }}-modules-${{ inputs.optimize_level }}-${{ env.KERNEL_FULL_VER }}-${{ inputs.lto }}_LTO
         restore-keys: |
           ccache-${{ env.MODEL }}-modules-${{ inputs.optimize_level }}-${{ env.KERNEL_FULL_VER }}
@@ -814,6 +816,20 @@ runs:
         find "$MODULES_SRC" -type f -name '*.ko' -print0 | xargs -0 zip -j "$MODULES_ZIP"
         echo "Packaged kernel modules to $MODULES_ZIP"
 
+    - name: Cleanup old build cache
+      if: ${{ env.BUILD_TYPE == 'Modules Only' || env.BUILD_TYPE == 'Mixed Build' || env.BUILD_TYPE == 'Monolithic Build' }}
+      shell: bash
+      run: |
+        echo "WARNING: Deleting build cache..." >&2
+        gh cache delete cache-${{ env.MODEL }}-${{ env.OS_SHORT }}-${{ inputs.optimize_level }}-${{ inputs.kernel_uname }}-${{ env.KERNEL_VERSION }} || true
+
+    - name: Save build cache
+      if: ${{ env.BUILD_TYPE == 'Modules Only' || env.BUILD_TYPE == 'Mixed Build' || env.BUILD_TYPE == 'Monolithic Build' }}
+      uses: actions/cache/save@v5
+      with:
+        path: ${{ env.OUT_DIR }}
+        key: cache-${{ env.MODEL }}-${{ env.OS_SHORT }}-${{ inputs.optimize_level }}-${{ inputs.kernel_uname }}-${{ env.KERNEL_VERSION }}
+
     - name: ccache Post-Build Statistics
       id: ccache_stats
       if: ${{ inputs.clean_build != 'true' }}
@@ -954,7 +970,9 @@ runs:
       if: ${{ inputs.clean_build != 'true' }}
       uses: actions/cache/save@v5
       with:
-        path: ${{ env.CCACHE_DIR }}
+        path: |
+          ${{ env.CCACHE_DIR }}
+          ${{ env.MSM }}/out
         key: ccache-${{ env.MODEL }}-modules-${{ inputs.optimize_level }}-${{ env.KERNEL_FULL_VER }}-${{ inputs.lto }}_LTO
 
     - name: Save LTO cache

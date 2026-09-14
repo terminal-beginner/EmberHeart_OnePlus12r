@@ -181,26 +181,32 @@ runs:
         WILD_KERNEL_PATCHES="$GITHUB_WORKSPACE/kernel_patches"
         KERNEL_PATCHES="$GITHUB_WORKSPACE/my_patches"
 
-        # === MTIME CACHE SETUP (copy from repo) ===
-        DYNAMIC_CACHE_DIR="$CONFIG/dynamic_cache"
-        MTIME_CACHE="$CONFIG/dynamic_mtime.sh"
+        # Export standard kernel-platform paths (Workflow 2 style)
+        ROOT_DIR="$KERNEL_PLATFORM"
+        OUT_DIR="${ROOT_DIR}/out"
+        DIST_DIR="${ROOT_DIR}/dist"
 
         echo "Creating folder for configuration: $CONFIG"
         mkdir -p "$CONFIG"
         mkdir -p "$ARTIFACTS_DIR"
         mkdir -p "$ARTIFACTS_DIR_DEBUG"
         mkdir -p "$KBUILD_MIXED_TREE_DIR"
-        mkdir -p "$DYNAMIC_CACHE_DIR"
+        mkdir -p "$OUT_DIR"
+        mkdir -p "$DIST_DIR"
 
-        # Copy mtime script from repo (.github/scripts/dynamic_mtime.sh)
-        cp "$GITHUB_WORKSPACE/.github/scripts/dynamic_mtime.sh" "$MTIME_CACHE"
-        chmod +x "$MTIME_CACHE"
-        echo "✅ MTIME hack installed: $MTIME_CACHE"
+        # === MTIME HACK SETUP (Workflow 2 style) ===
+        DYNAMIC_CACHE_DIR="${OUT_DIR}/dynamic_cache"
+        MTIME_CACHE="${KERNEL_PATCHES}/scripts/dynamic_mtime.sh"
+
+        mkdir -p "$DYNAMIC_CACHE_DIR"
 
         echo "CONFIG=$CONFIG" >> "$GITHUB_ENV"
         echo "ARTIFACTS_DIR=$ARTIFACTS_DIR" >> "$GITHUB_ENV"
         echo "ARTIFACTS_DIR_DEBUG=$ARTIFACTS_DIR_DEBUG" >> "$GITHUB_ENV"
         echo "KERNEL_PLATFORM=$KERNEL_PLATFORM" >> "$GITHUB_ENV"
+        echo "ROOT_DIR=$ROOT_DIR" >> "$GITHUB_ENV"
+        echo "OUT_DIR=$OUT_DIR" >> "$GITHUB_ENV"
+        echo "DIST_DIR=$DIST_DIR" >> "$GITHUB_ENV"
         echo "COMMON=$COMMON" >> "$GITHUB_ENV"
         echo "MSM=$MSM" >> "$GITHUB_ENV"
         echo "KBUILD_MIXED_TREE_DIR=$KBUILD_MIXED_TREE_DIR" >> "$GITHUB_ENV"
@@ -208,6 +214,8 @@ runs:
         echo "KERNEL_PATCHES=$KERNEL_PATCHES" >> "$GITHUB_ENV"
         echo "DYNAMIC_CACHE_DIR=$DYNAMIC_CACHE_DIR" >> "$GITHUB_ENV"
         echo "MTIME_CACHE=$MTIME_CACHE" >> "$GITHUB_ENV"
+
+        chmod +x "$MTIME_CACHE"
 
         REPO="/usr/local/bin/repo"
         if [ ! -x "$REPO" ]; then
@@ -379,3 +387,34 @@ runs:
 
         echo "Clang detected ✅"
         echo "::endgroup::"
+
+    - name: Get kernel version for build cache
+      shell: bash
+      run: |
+        set -euo pipefail
+        cd "$COMMON"
+        KERNEL_VERSION="$(make kernelversion)"
+        echo "KERNEL_VERSION=$KERNEL_VERSION" >> "$GITHUB_ENV"
+        echo "Kernel version: $KERNEL_VERSION"
+
+    - name: Restore build cache
+      uses: actions/cache/restore@v5
+      with:
+        path: ${{ env.OUT_DIR }}
+        key: cache-${{ env.MODEL }}-${{ env.OS_SHORT }}-${{ inputs.optimize_level }}-${{ inputs.kernel_uname }}-${{ env.KERNEL_VERSION }}
+
+    - name: Fast build mtime hack
+      shell: bash
+      run: |
+        # :)
+
+        if [[ "${TREE}" == "mixed" ]]; then
+          ( "${MTIME_CACHE}" -t -d "${ROOT_DIR}/common" -k gki-kernel )
+          ( "${MTIME_CACHE}" -t -d "${ROOT_DIR}/msm-kernel" -k  msm-kernel )
+        else
+          (  "${MTIME_CACHE}" -t -d "${ROOT_DIR}/common" -k gki-kernel )
+        fi
+
+        if [[ -d "${ANDROID_BUILD_TOP}/vendor" ]]; then
+          ( "${MTIME_CACHE}" -t -d "${ANDROID_BUILD_TOP}/vendor" -k vendor )
+        fi

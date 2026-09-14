@@ -1,106 +1,169 @@
-#!/bin/bash
-# nullptr-style mtime hack: sha256-based change detection
-# Goal: restore old mtimes for UNCHANGED files so ccache hits survive re-patching
+#!/usr/bin/env bash
+# dynamic_mtime.sh — mtime-based incremental-build hinting across shallow clones.
+# Copyright (c) 2026  nullptr_t <nullptr.oss@gmail.com>
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>
 #
 # Usage:
-#   dynamic_mtime.sh -u -d <dir> -k <key>   # update cache (hash all files, save hash+mtime+path)
-#   dynamic_mtime.sh -t -d <dir> -k <key>   # restore mtimes for files whose hash is unchanged
+#   dynamic_mtime.sh -t -d <dir> [-k <key>]   # track: call after clone, before patches
+#   dynamic_mtime.sh -u -d <dir> [-k <key>]   # untrack: call after patches, before build
 #
-# Cache format: <sha256>|<mtime_epoch>|<absolute_path>
-# Cache file:   $DYNAMIC_CACHE_DIR/<key>.cache
+# Requires: DYNAMIC_CACHE_DIR env var (e.g. ${OUT_DIR}/dynamic_cache)
+#
+# NOTE on dates: _freeze is a fixed date safely in the past (never
+# decays). "Changed" files are stamped with the REAL current time, not a
+# fixed constant — a fixed future constant would eventually be overtaken
+# by real build-output timestamps and silently break (this happened: the
+# original NEW_CONST=2026-01-01 is already in the past as of real "now").
+# Real "now" is guaranteed newer than any previously-cached build output,
+# in every future run, with no swap/rotation logic required.
+#
+# Note : NEW_CONST=2026-01-01, was part of the legacy/previous
+#       implementation of this script (which I nuked ofc 🌚)
+
+# Disclaimer: If you're using this script, add me as author in the commit that added/used/referenced
+#             this script, oth you're GAY.
+#
+# How to : stage all changes using : git add .
+#          commit : git commit -s --author "nullptr_t <nullptr.oss@gmail.com>"
+#
+# And if you're reading this after creating the commit, use git rebase.
+# git rebase docs : https://git-scm.com/docs/git-rebase
+
 
 set -euo pipefail
 
-MODE=""
-DIR=""
-KEY=""
+# Extracted this from kali's default colorscheme
+red="\033[38;2;236;1;1m"
+blue="\033[38;2;39;127;255m"
+green="\e[38;2;71;212;185m"
+yellow="\e[38;2;254;164;76m"
+end="\e[0m"
 
-while [[ $# -gt 0 ]]; do
-  case "$1" in
-    -t|-u) MODE="$1"; shift ;;
-    -d) DIR="${2:-}"; shift 2 ;;
-    -k) KEY="${2:-}"; shift 2 ;;
-    *) shift ;;
+_name="[${yellow}$(basename "$0")${end}]"
+_freeze="200712220000"
+
+mode=""
+dir=""
+key=""
+while getopts ":tud:k:" opt; do
+  case "${opt}" in
+    t) mode="track" ;;
+    u) mode="untrack" ;;
+    d) dir="${OPTARG}" ;;
+    k) key="${OPTARG}" ;;
+    \?) echo -e "${_name} unknown flag: ${red}-${OPTARG}${end}" >&2; exit 1 ;;
+    :)  echo -e "${_name} ${red}-${OPTARG} requires an argument${end}" >&2; exit 1 ;;
   esac
 done
 
-if [ -z "${MODE}" ] || [ -z "${DIR}" ]; then
-  echo "[mtime] usage: -t|-u -d <dir> -k <key>" >&2
+[[ -n "${mode}" ]] || { echo -e "Usage: $(basename "$0") -t|-u -d <dir> [-k <key>]" >&2; exit 1; }
+[[ -n "${dir}"  ]] || { echo -e "${_name} -d <dir> is required" >&2; exit 1; }
+[[ -d "${dir}"  ]] || { echo -e "${_name} ${dir} is not a directory" >&2; exit 1; }
+[[ -n "${DYNAMIC_CACHE_DIR:-}" ]] || { echo -e "${_name} ${red}DYNAMIC_CACHE_DIR is not set${end}" >&2; exit 1; }
+
+root="$(cd "${dir}" && pwd)"
+if [[ -z "${key}" ]]; then
+  key="$(basename "${root}")-$(printf '%s' "${root}" | sha256sum | cut -c1-8)"
+fi
+
+cache_dir="${DYNAMIC_CACHE_DIR}/${key}"
+hash="${cache_dir}/hashes.tsv"
+mkdir -p "${cache_dir}"
+
+echo -e "${_name} [${blue}${key}${end}] dir=${root} mode=${mode}"
+
+if [[ "${mode}" == "track" ]]; then
+  find "${root}" -type f -not -path '*/.git/*' -exec touch -t "${_freeze}" {} +
+  echo -e "${_name} [${blue}${key}${end}] flattened to fallback — ready for patches"
   exit 0
 fi
 
-if [ ! -d "${DIR}" ]; then
-  echo "[mtime] dir not found: ${DIR}, skipping" >&2
-  exit 0
+# --- untrack ---
+declare -A BASELINE=()
+if [[ -f "${hash}" ]]; then
+  while IFS=$'\t' read -r rel h; do
+    [[ -z "${rel}" ]] && continue
+    BASELINE["${rel}"]="${h}"
+  done < "${hash}"
 fi
 
-DIR="$(cd "${DIR}" && pwd)"
+is_fresh_cache=false
+[[ ${#BASELINE[@]} -eq 0 ]] && is_fresh_cache=true
 
-CACHE_DIR="${DYNAMIC_CACHE_DIR:-/tmp/mtime_cache}"
-mkdir -p "${CACHE_DIR}"
-CACHE_FILE="${CACHE_DIR}/${KEY:-default}.cache"
+tmp_hash="$(mktemp)"
+raw_hash="$(mktemp)"
+err_log="$(mktemp)"
+trap 'rm -f "${tmp_hash}" "${raw_hash}" "${err_log}"' EXIT
 
-list_files() {
-  find "${DIR}" \
-    \( -path "*/.git" -o -path "*/out" -o -path "*/build" -o -path "*/.tmp_versions" \) -prune -o \
-    -type f -print0 2>/dev/null
-}
+# Batched + parallel hashing: -n64 files per sha256sum invocation, -P across cores.
+set +o pipefail
+find "${root}" -type f -not -path '*/.git/*' -print0 | \
+  xargs -0 -P "$(nproc)" -n 64 sha256sum > "${raw_hash}" 2> "${err_log}"
+xargs_status=$?
+set -o pipefail
 
-file_signature() {
-  local f="$1"
-  local h m
-  h=$(sha256sum -- "${f}" 2>/dev/null | awk '{print $1}') || return 1
-  m=$(stat -c %Y -- "${f}" 2>/dev/null) || return 1
-  [ -n "${h}" ] && [ -n "${m}" ] || return 1
-  printf '%s|%s|%s\n' "${h}" "${m}" "${f}"
-}
+if [[ -s "${err_log}" ]]; then
+  echo -e "${_name} [${blue}${key}${end}]   ${yellow}warning: some files could not be hashed:${end}"
+  sed "s/^/${_name}   /" "${err_log}"
+fi
 
-case "${MODE}" in
-  -u)
-    echo "[mtime] ${KEY}: updating cache for ${DIR}"
-    NEW_CACHE="${CACHE_FILE}.new.$$"
-    : > "${NEW_CACHE}"
+if [[ "${xargs_status}" -gt 1 ]]; then
+  echo -e "${_name} [${blue}${key}${end}]   ${red}xargs exited abnormally (status ${xargs_status})${end}"
+fi
 
-    while IFS= read -r -d '' file; do
-      sig=$(file_signature "${file}") || continue
-      printf '%s\n' "${sig}" >> "${NEW_CACHE}"
-    done < <(list_files)
+if ${is_fresh_cache}; then
+  echo -e "${_name} [${blue}${key}${end}]   ${yellow}fresh cache — hashing all files, per-file diff suppressed${end}"
+fi
 
-    mv -f "${NEW_CACHE}" "${CACHE_FILE}"
-    total=$(wc -l < "${CACHE_FILE}" || echo 0)
-    echo "[mtime] ${KEY}: cached ${total} files"
-    ;;
+changed=0
+unchanged=0
+changed_list="$(mktemp)"
+unchanged_list="$(mktemp)"
+trap 'rm -f "${tmp_hash}" "${raw_hash}" "${err_log}" "${changed_list}" "${unchanged_list}"' EXIT
 
-  -t)
-    if [ ! -f "${CACHE_FILE}" ]; then
-      echo "[mtime] ${KEY}: no cache yet, skipping restore"
-      exit 0
-    fi
+while IFS= read -r line; do
+  h="${line%%  *}"
+  f="${line#*  }"
+  rel="${f#"${root}"/}"
+  echo -e "${rel}\t${h}" >> "${tmp_hash}"
 
-    echo "[mtime] ${KEY}: restoring mtimes from cache"
-    restored=0
-    skipped=0
-    missing=0
-
-    while IFS='|' read -r old_hash old_mtime path; do
-      [ -z "${path:-}" ] && continue
-
-      if [ ! -f "${path}" ]; then
-        missing=$((missing + 1))
-        continue
-      fi
-
-      cur_hash=$(sha256sum -- "${path}" 2>/dev/null | awk '{print $1}') || { skipped=$((skipped + 1)); continue; }
-
-      if [ "${cur_hash}" = "${old_hash}" ]; then
-        touch -d "@${old_mtime}" -- "${path}" 2>/dev/null && restored=$((restored + 1)) || skipped=$((skipped + 1))
+  prev="${BASELINE[${rel}]:-}"
+  if [[ "${h}" == "${prev}" ]]; then
+    printf '%s\0' "${f}" >> "${unchanged_list}"
+    unchanged=$((unchanged + 1))
+  else
+    # touch with real current time instead of fixed new time
+    printf '%s\0' "${f}" >> "${changed_list}"
+    changed=$((changed + 1))
+    if ! ${is_fresh_cache}; then
+      if [[ -z "${prev}" ]]; then
+        echo -e "${_name} [${blue}${key}${end}]   ${green}+ ${rel} (null -> ${h:0:8})${end}"
       else
-        skipped=$((skipped + 1))
+        echo -e "${_name} [${blue}${key}${end}]   ${red}~ ${rel} (${prev:0:8} -> ${h:0:8})${end}"
       fi
-    done < "${CACHE_FILE}"
+    fi
+  fi
+done < "${raw_hash}"
 
-    echo "[mtime] ${KEY}: restored=${restored} changed_or_skipped=${skipped} missing=${missing}"
-    ;;
-esac
+# I hope this will speed up the cache time from 3m xD ; TODO: maybe change sha256 to something lightweight coz it's a bit overkill imo
+[[ -s "${unchanged_list}" ]] && xargs -0 -P "$(nproc)" -n 200 touch -t "${_freeze}" -- < "${unchanged_list}"
+[[ -s "${changed_list}"   ]] && xargs -0 -P "$(nproc)" -n 200 touch --                -- < "${changed_list}"
 
-exit 0
+
+mv -f "${tmp_hash}" "${hash}"
+trap - EXIT
+
+echo -e "${_name} [${blue}${key}${end}] ${red}${changed}${end} file(s) changed, ${green}${unchanged}${end} unchanged"

@@ -65,16 +65,6 @@ on:
         required: false
         type: boolean
         default: false
-      use_adios:
-        description: 'Enable ADIOS I/O scheduler support'
-        required: false
-        type: boolean
-        default: false
-      use_ntsync:
-        description: 'Enable NTSync support (patch availability varies by kernel version)'
-        required: false
-        type: boolean
-        default: false
       vendor_debloat:
         description: 'Comma-separated vendor modules to blacklist (empty = skip). Protected: coresight, rust_binder, msm_kgsl, camera'
         required: false
@@ -267,8 +257,6 @@ jobs:
           use_nomount: ${{ inputs.use_nomount == true && 'true' || 'false' }}
           nomount_ref: 'main'
           patches_ref: 'main'
-          use_adios: ${{ inputs.use_adios == true && 'true' || 'false' }}
-          use_ntsync: ${{ inputs.use_ntsync == true && 'true' || 'false' }}
           use_unicode_fix: 'true'
           use_ipv6_nat: 'true'
           vendor_debloat: ${{ inputs.vendor_debloat }}
@@ -574,18 +562,6 @@ jobs:
           - [+] IP Set Support
           - [+] Unicode Path Fix
           EOF
-
-          if [ "${{ inputs.use_adios }}" = "true" ]; then
-            cat << EOF >> release_notes.md
-          - [+] ADIOS I/O Scheduler
-          EOF
-          fi
-
-          if [ "${{ inputs.use_ntsync }}" = "true" ]; then
-            cat << EOF >> release_notes.md
-          - [+] NTSync Support (Wine/Proton)
-          EOF
-          fi
 
           if [ -n "${{ inputs.vendor_debloat }}" ]; then
             cat << EOF >> release_notes.md
