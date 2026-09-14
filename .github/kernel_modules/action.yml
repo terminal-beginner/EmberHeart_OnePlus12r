@@ -320,7 +320,7 @@ runs:
           [ -d "$MSM" ] && ( "$MTIME_CACHE" -u -d "$MSM" -k msm-kernel ) || true
           [ -d "$CONFIG/vendor" ] && ( "$MTIME_CACHE" -u -d "$CONFIG/vendor" -k vendor ) || true
           [ -d "$KERNEL_PLATFORM/Baseband-guard" ] && ( "$MTIME_CACHE" -u -d "$KERNEL_PLATFORM/Baseband-guard" -k bbg ) || true
-          [ -d "$KERNEL_PLATFORM/susfs4ksu" ] && ( "$MTIME_CACHE" -u -d "$KERNEL_PLATFORM/susfs4ksu" -k susfs ) || true
+          [ -d "$GITHUB_WORKSPACE/susfs4ksu" ] && ( "$MTIME_CACHE" -u -d "$GITHUB_WORKSPACE/susfs4ksu" -k susfs ) || true
           [ -n "${KSU_DIR:-}" ] && [ -d "$KSU_DIR" ] && ( "$MTIME_CACHE" -u -d "$KSU_DIR" -k ksun ) || true
           [ -d "$GITHUB_WORKSPACE/nomount_suite" ] && ( "$MTIME_CACHE" -u -d "$GITHUB_WORKSPACE/nomount_suite" -k nomount ) || true
           echo "::endgroup::"

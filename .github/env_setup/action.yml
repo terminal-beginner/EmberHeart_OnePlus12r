@@ -196,7 +196,7 @@ runs:
 
         # === MTIME HACK SETUP (Workflow 2 style) ===
         DYNAMIC_CACHE_DIR="${OUT_DIR}/dynamic_cache"
-        MTIME_CACHE="${KERNEL_PATCHES}/scripts/dynamic_mtime.sh"
+        MTIME_CACHE="${GITHUB_WORKSPACE}/.github/scripts/dynamic_mtime.sh"
 
         mkdir -p "$DYNAMIC_CACHE_DIR"
 

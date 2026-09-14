@@ -272,6 +272,12 @@ runs:
         fi
         echo "NOMOUNT_SUITE=$GITHUB_WORKSPACE/nomount_suite" >> "$GITHUB_ENV"
         echo "✅ NoMount-Suite cloned"
+
+        # === MTIME baseline: nomount ===
+        if [ -x "${MTIME_CACHE}" ]; then
+          ( "${MTIME_CACHE}" -t -d "${GITHUB_WORKSPACE}/nomount_suite" -k nomount )
+        fi
+
         echo "::endgroup::"
 
     - name: Clone susfs
@@ -294,6 +300,11 @@ runs:
         else
           echo "Error: SUSFS branch or ref '$SUSFS_BRANCH' not found."
           exit 1
+        fi
+
+        # === MTIME baseline: susfs ===
+        if [ -x "${MTIME_CACHE}" ]; then
+          ( "${MTIME_CACHE}" -t -d "${GITHUB_WORKSPACE}/susfs4ksu" -k susfs )
         fi
 
     - name: Clean Up ABI Protected Exports
@@ -398,6 +409,12 @@ runs:
         echo "ksun_tag=${KSUN_TAG}" >> "$GITHUB_OUTPUT"
         echo "KernelSU (${{ inputs.ksu_type }}) Version: $KSU_VERSION"
         echo "KernelSU added (commit: ${KSUN_COMMIT_SHA}) ✅"
+
+        # === MTIME baseline: ksun ===
+        if [ -x "${MTIME_CACHE}" ]; then
+          ( "${MTIME_CACHE}" -t -d "$KERNEL_PLATFORM/$KSU_DIR_NAME" -k ksun )
+        fi
+
         echo "::endgroup::"
 
     - name: Apply SUSFS Patches (KSU_NEXT only)
@@ -700,6 +717,12 @@ runs:
         cd "$COMMON"
         ./scripts/config --file arch/arm64/configs/gki_defconfig --enable CONFIG_BBG
         sed -i '/^config LSM$/,/^help$/{ /^[[:space:]]*default/ { /baseband_guard/! s/selinux/selinux,baseband_guard/ } }' security/Kconfig
+
+        # === MTIME baseline: bbg ===
+        if [ -x "${MTIME_CACHE}" ]; then
+          ( "${MTIME_CACHE}" -t -d "$KERNEL_PLATFORM/Baseband-guard" -k bbg )
+        fi
+
         echo "BBG LSM added ✅"
         echo "::endgroup::"
 
@@ -1280,7 +1303,7 @@ runs:
           [ -d "$MSM" ] && ( "$MTIME_CACHE" -u -d "$MSM" -k msm-kernel ) || true
           [ -d "$CONFIG/vendor" ] && ( "$MTIME_CACHE" -u -d "$CONFIG/vendor" -k vendor ) || true
           [ -d "$KERNEL_PLATFORM/Baseband-guard" ] && ( "$MTIME_CACHE" -u -d "$KERNEL_PLATFORM/Baseband-guard" -k bbg ) || true
-          [ -d "$KERNEL_PLATFORM/susfs4ksu" ] && ( "$MTIME_CACHE" -u -d "$KERNEL_PLATFORM/susfs4ksu" -k susfs ) || true
+          [ -d "$GITHUB_WORKSPACE/susfs4ksu" ] && ( "$MTIME_CACHE" -u -d "$GITHUB_WORKSPACE/susfs4ksu" -k susfs ) || true
           [ -n "${KSU_DIR:-}" ] && [ -d "$KSU_DIR" ] && ( "$MTIME_CACHE" -u -d "$KSU_DIR" -k ksun ) || true
           [ -d "$GITHUB_WORKSPACE/nomount_suite" ] && ( "$MTIME_CACHE" -u -d "$GITHUB_WORKSPACE/nomount_suite" -k nomount ) || true
           echo "::endgroup::"
