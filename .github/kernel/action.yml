@@ -155,29 +155,17 @@ runs:
         cd "${ROOT_DIR}"
         echo "Adding KernelSU Next..."
 
-        # Use pershoot/KernelSU-Next (dev-susfs) when SUSFS is enabled.
-        # Vanilla KernelSU-Next/dev has diverged from what SUSFS v2.3.0 fix patches
-        # expect; pershoot's dev-susfs branch already has SUSFS integrated so fix
-        # patches apply cleanly.
+        # Always clone vanilla KernelSU-Next. SUSFS is enabled later by applying
+        # 10_enable_susfs_for_ksu.patch from the simonpunk/susfs4ksu repo.
         KSU_INPUT="${{ inputs.ksun_branch_or_hash }}"
 
-        if [[ "${{ inputs.use_susfs }}" = "true" ]]; then
-          if [[ -z "${KSU_INPUT}" || "${KSU_INPUT}" = "dev" ]]; then
-            KSU_INPUT="dev-susfs"
-          fi
-          echo "Using pershoot/KernelSU-Next @ ${KSU_INPUT} (SUSFS pre-integrated)"
+        if [[ -z "${KSU_INPUT}" ]]; then
           curl --fail --location --proto '=https' -LSs \
-            "https://raw.githubusercontent.com/pershoot/KernelSU-Next/dev/kernel/setup.sh" \
-            | bash -s "${KSU_INPUT}"
+            "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/dev/kernel/setup.sh" | bash -
         else
-          if [[ -z "${KSU_INPUT}" ]]; then
-            curl --fail --location --proto '=https' -LSs \
-              "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/dev/kernel/setup.sh" | bash -
-          else
-            curl --fail --location --proto '=https' -LSs \
-              "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/dev/kernel/setup.sh" \
-              | bash -s "${KSU_INPUT}"
-          fi
+          curl --fail --location --proto '=https' -LSs \
+            "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/dev/kernel/setup.sh" \
+            | bash -s "${KSU_INPUT}"
         fi
 
         git submodule update --init --recursive
@@ -354,9 +342,13 @@ runs:
             fi
             ;;
           "v2.3.0")
-            # KernelSU-Next source already has SUSFS integration (pershoot dev-susfs).
-            # Skip 10_enable_susfs_for_ksu.patch and apply all fix patches directly.
-            echo "SUSFS pre-integrated in KSU-Next source — skipping 10_enable_susfs patch"
+            # Apply base patch FIRST — without it, susfs_* symbols used by
+            # KernelSU-Next are not declared, and the build fails at compile time.
+            echo "Applying 10_enable_susfs_for_ksu.patch (base)"
+            patch -p1 --forward --fuzz=3 \
+              -i "${susfs_dir}/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch" \
+              || echo "::warning::base patch had hunks that didn't apply cleanly — continuing"
+
             echo "Applying fix patches from: ${SUSFS_FIX_PATCHES_FOLDER}/${susfs_version}"
 
             for fixpatch in "${SUSFS_FIX_PATCHES_FOLDER}/${susfs_version}"/*.patch; do
