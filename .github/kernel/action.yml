@@ -25,6 +25,11 @@ inputs:
     required: false
     type: string
     default: 'false'
+  blacklist_modules:
+    description: 'Comma-separated vendor modules to blacklist (safe ones only). Leave empty for auto-mode.'
+    required: false
+    type: string
+    default: ''
   github_token:
     required: true
     type: string
@@ -102,7 +107,6 @@ runs:
 
         echo "susfs_dir=$(pwd)" >> "${GITHUB_ENV}"
 
-        # Clone Bouteillepleine kernel_patches for v2.2.0+ SUSFS fix patches
         cd "${GITHUB_WORKSPACE}"
         BOUTON_DIR="${GITHUB_WORKSPACE}/bouton_kernel_patches"
         rm -rf "${BOUTON_DIR}"
@@ -244,7 +248,6 @@ runs:
         echo "susfs_version=${susfs_version:-unknown}" >> "${GITHUB_OUTPUT}"
         echo "SuSFS Version: ${susfs_version}"
 
-        # Resolve fix patches source: Bouteillepleine primary (has v2.2.0/v2.3.0), WildKernels fallback
         if [ -n "${BOUTON_KERNEL_PATCHES:-}" ] && [ -d "${BOUTON_KERNEL_PATCHES}/next/susfs_fix_patches/${susfs_version}" ]; then
           SUSFS_FIX_PATCHES_FOLDER="${BOUTON_KERNEL_PATCHES}/next/susfs_fix_patches"
           echo "Fix patches source: Bouteillepleine (${SUSFS_FIX_PATCHES_FOLDER})"
@@ -253,7 +256,6 @@ runs:
           echo "Fix patches source: WildKernels (${SUSFS_FIX_PATCHES_FOLDER})"
         fi
 
-        # NEED_HOOKS=true if susfs_version <= 1.5.12
         SUSFS_VER_NUM="${susfs_version#v}"
         SUSFS_LOWEST="$(printf '%s\n' '1.5.12' "${SUSFS_VER_NUM}" | sort -V | head -n1)"
         if [ "${SUSFS_LOWEST}" = "${SUSFS_VER_NUM}" ]; then
@@ -342,8 +344,6 @@ runs:
             fi
             ;;
           "v2.3.0")
-            # Apply base patch FIRST — without it, susfs_* symbols used by
-            # KernelSU-Next are not declared, and the build fails at compile time.
             echo "Applying 10_enable_susfs_for_ksu.patch (base)"
             patch -p1 --forward --fuzz=3 \
               -i "${susfs_dir}/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch" \
@@ -386,7 +386,6 @@ runs:
           fi
         fi
 
-        # Fake kernel patch to fix failures
         fake_patched=0
         fake_patched_expand=0
         if [[ "${{ env.ANDROID_RELEASE }}" = "android15" ]] && [[ "${{ env.KERNEL_VERSION }}" = "6.6" ]]; then
@@ -447,7 +446,6 @@ runs:
 
         patch -p1 --fuzz=3 -i 50_add_susfs_in_${{ env.SUSFS_KERNEL_BRANCH }}.patch
 
-        # Revert Fake kernel patch
         if [[ "$fake_patched_expand" = 1 ]]; then
           if [[ "${{ env.ANDROID_RELEASE }}" = "android15" ]] && [[ "${{ env.KERNEL_VERSION }}" = "6.6" ]]; then
             if grep -qF 'if (vma->vm_end > last_vma_end) {' ./fs/proc/task_mmu.c && ! grep -qxF 'SUSFS_IS_INODE_SUS_MAP' ./fs/proc/task_mmu.c; then
@@ -748,6 +746,138 @@ runs:
         echo "Other kernel patches applied 🔥"
         echo "::endgroup::"
 
+    # ─────────────────────────────────────────────────────────────
+    # NEW: Fake config.gz patch — hides custom kernel indicators
+    # from /proc/config.gz so detection apps can't read real config
+    # ─────────────────────────────────────────────────────────────
+    - name: Apply Fake config.gz patch
+      shell: bash
+      run: |
+        set -euo pipefail
+        echo "::group::Apply Fake config.gz patch"
+        cd "${ROOT_DIR}/common"
+
+        FAKE_PATCH="${WILD_KERNEL_PATCHES}/common/fake_config.patch"
+        if [ ! -f "${FAKE_PATCH}" ]; then
+          echo "::warning::fake_config.patch not found at ${FAKE_PATCH} — skipping"
+          echo "::endgroup::"
+          exit 0
+        fi
+
+        if patch -p1 --forward --fuzz=3 < "${FAKE_PATCH}"; then
+          echo "Fake config.gz patch applied ✅"
+        else
+          echo "::warning::fake_config patch had hunks that didn't apply cleanly — continuing"
+        fi
+
+        # Configs to hide from /proc/config.gz (reveal custom kernel / root)
+        HIDE_LIST=(
+          "CONFIG_KSU"
+          "CONFIG_KSU_SUSFS"
+          "CONFIG_KSU_SUSFS_HAS_MAGIC_MOUNT"
+          "CONFIG_KSU_SUSFS_SUS_PATH"
+          "CONFIG_KSU_SUSFS_SUS_MOUNT"
+          "CONFIG_KSU_SUSFS_SUS_KSTAT"
+          "CONFIG_KSU_SUSFS_SPOOF_UNAME"
+          "CONFIG_KSU_SUSFS_ENABLE_LOG"
+          "CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS"
+          "CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG"
+          "CONFIG_KSU_SUSFS_OPEN_REDIRECT"
+          "CONFIG_KSU_SUSFS_SUS_MAP"
+          "CONFIG_BBG"
+          "CONFIG_TCP_CONG_BBR3"
+        )
+
+        CONFIG_FAKE_DISABLE="${HIDE_LIST[*]}"
+        echo "CONFIG_FAKE_DISABLE=${CONFIG_FAKE_DISABLE}" >> "${GITHUB_ENV}"
+
+        echo "Fake config will hide:"
+        for c in "${HIDE_LIST[@]}"; do
+          echo "  - ${c}"
+        done
+        echo "::endgroup::"
+
+    # ─────────────────────────────────────────────────────────────
+    # NEW: Vendor debloat — blacklist non-critical vendor modules
+    # from being built (safe list; risky modules auto-skipped)
+    # ─────────────────────────────────────────────────────────────
+    - name: Disable Vendor / Kernel Modules
+      shell: bash
+      run: |
+        set -euo pipefail
+        echo "::group::Disable Vendor / Kernel Modules"
+        cd "${ROOT_DIR}/common"
+
+        # Modules that MUST NEVER be blacklisted (system critical)
+        RISKY_MODULES=(
+          "coresight" "rust_binder" "msm_kgsl" "camera" "oplusboot"
+          "rmnet_wlan" "rmnet_core" "msm_drm" "cnss2" "oplus_chg_v2"
+          "reboot_mode" "rfkill" "bootloader_log"
+        )
+
+        declare -a modules=()
+
+        IFS=',' read -ra USER_MODS <<< "${{ inputs.blacklist_modules }}"
+        for mod in "${USER_MODS[@]}"; do
+          mod=$(echo "$mod" | tr -d '[:space:]')
+          [[ -n "$mod" ]] && modules+=("$mod")
+        done
+
+        # Auto-add network tuning modules (redundant with BBR/BBR3)
+        for auto in "oplus_network_tuning" "oplus_networks_tuning"; do
+          already=0
+          for m in "${modules[@]}"; do
+            [ "$m" = "$auto" ] && already=1 && break
+          done
+          [ "$already" = 0 ] && modules+=("$auto")
+        done
+
+        # Safety filter: drop any risky modules
+        declare -a validated=()
+        for mod in "${modules[@]}"; do
+          is_risky=false
+          for risky in "${RISKY_MODULES[@]}"; do
+            if [ "$mod" = "$risky" ]; then
+              is_risky=true
+              echo "::warning::Refusing to blacklist protected module: $mod"
+              break
+            fi
+          done
+          [ "$is_risky" = false ] && validated+=("$mod")
+        done
+
+        if [ ${#validated[@]} -gt 0 ]; then
+          RAW_JOINED=$(IFS=,; echo "${validated[*]}")
+          RESULT_LIST="\"${RAW_JOINED}\""
+        else
+          RESULT_LIST='""'
+        fi
+
+        echo "Blacklisting modules: ${RESULT_LIST}"
+        echo "CONFIG_DEBOAT_VENDOR_MODULES_PLACEHOLDER=1" >> /dev/null || true
+        echo "CONFIG_DEBLOAT_VENDOR_MODULES=${RESULT_LIST}" >> arch/arm64/configs/kernel.config
+
+        # Pick the right support patch for the kernel version
+        MIN_VERSION="5.16"
+        if [[ "$(printf '%s\n' "${KERNEL_VERSION}" "${MIN_VERSION}" | sort -V | head -n1)" == "${KERNEL_VERSION}" ]]; then
+          VENDOR_PATCH="${WILD_KERNEL_PATCHES}/common/vendor_modules/0001-Support-conditional-vendor-modules-blacklisting-5.15-and-below.patch"
+        else
+          VENDOR_PATCH="${WILD_KERNEL_PATCHES}/common/vendor_modules/0001-Support-conditional-vendor-modules-blacklisting-6.1-and-above.patch"
+        fi
+
+        if [ -f "${VENDOR_PATCH}" ]; then
+          if patch -p1 --forward --fuzz=3 < "${VENDOR_PATCH}"; then
+            echo "Vendor modules blacklist patch applied ✅"
+          else
+            echo "::warning::vendor_modules blacklist patch had hunks that didn't apply cleanly"
+          fi
+        else
+          echo "::warning::Vendor modules patch not found at ${VENDOR_PATCH}"
+        fi
+
+        echo "FEATURES=${FEATURES:-} vendor_debloat" >> "${GITHUB_ENV}"
+        echo "::endgroup::"
+
     - name: Add Nethunter inline configs
       shell: bash
       run: |
@@ -948,7 +1078,7 @@ runs:
           -e CONFIG_IP_SET_HASH_NETIFACE \
           -e CONFIG_IP_SET_LIST_SET
 
-        echo "IP  SET support added ✅"
+        echo "IP SET support added ✅"
         echo "::endgroup::"
 
     - name: Enable traffic schedulers (qdisc)

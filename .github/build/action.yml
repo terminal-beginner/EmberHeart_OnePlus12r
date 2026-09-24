@@ -420,7 +420,9 @@ runs:
 
         echo " Building Kernel"
         set -x
-        ( cd "${OUT}" && make "${MAKE_FLAGS[@]}" O="${OUT}" ${MAKE_GOALS} )
+        ( cd "${OUT}" && make "${MAKE_FLAGS[@]}" O="${OUT}" \
+         CONFIG_FAKE_DISABLE="${CONFIG_FAKE_DISABLE:-}" \
+         ${MAKE_GOALS} )
         set +x
         _line
 
@@ -505,7 +507,9 @@ runs:
 
           echo " Building Kernel"
           set -x
-          ( cd "${OUT}" && make "${MAKE_FLAGS[@]}" O="${OUT}" ${MAKE_GOALS} )
+          ( cd "${OUT}" && make "${MAKE_FLAGS[@]}" O="${OUT}" \
+            CONFIG_FAKE_DISABLE="${CONFIG_FAKE_DISABLE:-}" \
+           ${MAKE_GOALS} )
           set +x
           _line
 
