@@ -7,6 +7,11 @@ inputs:
     required: false
     type: string
     default: 'false'
+  use_nomount:
+    description: 'Do you want to add NoMount (Prism engine) in kernel?'
+    required: false
+    type: string
+    default: 'false'
   optimize_level:
     required: false
     type: string

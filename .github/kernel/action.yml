@@ -20,6 +20,11 @@ inputs:
     required: false
     type: string
     default: ""
+  use_nomount:
+    description: 'Do you want to add NoMount (Prism engine) in kernel?'
+    required: false
+    type: string
+    default: 'false'
   github_token:
     required: true
     type: string
@@ -109,6 +114,30 @@ runs:
           echo "::warning::Failed to clone Bouteillepleine kernel_patches — falling back to WildKernels fix patches."
           echo "BOUTON_KERNEL_PATCHES=" >> "${GITHUB_ENV}"
         fi
+
+    - name: Clone NoMount-Suite
+      if: ${{ inputs.use_nomount == 'true' }}
+      shell: bash
+      run: |
+        set -euo pipefail
+        echo "::group::Cloning NoMount-Suite (hookless)"
+
+        NOMOUNT_DIR="${GITHUB_WORKSPACE}/nomount-suite"
+        rm -rf "${NOMOUNT_DIR}"
+
+        git clone --depth=1 --filter=blob:none --sparse \
+          https://github.com/Bouteillepleine/NoMount-Suite.git "${NOMOUNT_DIR}"
+        cd "${NOMOUNT_DIR}"
+        git sparse-checkout set hookless
+
+        if [ ! -d "${NOMOUNT_DIR}/hookless" ]; then
+          echo "::error::NoMount-Suite hookless dir missing after clone"
+          exit 1
+        fi
+
+        echo "NOMOUNT_DIR=${NOMOUNT_DIR}" >> "${GITHUB_ENV}"
+        echo "NoMount-Suite cloned ✅"
+        echo "::endgroup::"
 
     - name: Create custom defconfig fragment
       shell: bash
@@ -215,15 +244,13 @@ runs:
           echo "Fix patches source: WildKernels (${SUSFS_FIX_PATCHES_FOLDER})"
         fi
 
-        # Function to compare semantic versions
-        version_lte() {
-          [[ "$(printf '%s\n' "$2" "$1" | sort -V | head -n1)" = "$1" ]
-        }
-
-        if version_lte "${susfs_version:1}" "1.5.12"; then
-          echo "NEED_HOOKS=true" >> ${GITHUB_ENV}
+        # NEED_HOOKS=true if susfs_version <= 1.5.12
+        SUSFS_VER_NUM="${susfs_version#v}"
+        SUSFS_LOWEST="$(printf '%s\n' '1.5.12' "${SUSFS_VER_NUM}" | sort -V | head -n1)"
+        if [ "${SUSFS_LOWEST}" = "${SUSFS_VER_NUM}" ]; then
+          echo "NEED_HOOKS=true" >> "${GITHUB_ENV}"
         else
-          echo "NEED_HOOKS=false" >> ${GITHUB_ENV}
+          echo "NEED_HOOKS=false" >> "${GITHUB_ENV}"
         fi
 
         cd "${ksun_dir}"
@@ -346,6 +373,7 @@ runs:
 
         # Fake kernel patch to fix failures
         fake_patched=0
+        fake_patched_expand=0
         if [[ "${{ env.ANDROID_RELEASE }}" = "android15" ]] && [[ "${{ env.KERNEL_VERSION }}" = "6.6" ]]; then
           if ! grep -qxF $'\tunsigned int nr_subpages = __PAGE_SIZE / PAGE_SIZE;' ./fs/proc/task_mmu.c; then
             echo "nr_subpages Line not found. Fake Patching!"
@@ -451,6 +479,42 @@ runs:
         echo "SuSFS added ✅"
         echo "::endgroup::"
 
+    - name: Apply NoMount Patches
+      id: add_nomount
+      if: ${{ inputs.use_nomount == 'true' }}
+      shell: bash
+      run: |
+        set -euo pipefail
+        echo "::group::Applying NoMount patches..."
+
+        NOMOUNT_DIR="${GITHUB_WORKSPACE}/nomount-suite"
+        KERNEL_DIR="${ROOT_DIR}/common"
+
+        if [ ! -d "${NOMOUNT_DIR}/hookless" ]; then
+          echo "::error::NoMount-Suite hookless dir not found at ${NOMOUNT_DIR}/hookless"
+          exit 1
+        fi
+
+        cp "${NOMOUNT_DIR}/hookless/src/nomount.c" "${KERNEL_DIR}/fs/nomount.c"
+        cp "${NOMOUNT_DIR}/hookless/src/nomount.h" "${KERNEL_DIR}/fs/nomount.h"
+        echo "Copied nomount.c and nomount.h to ${KERNEL_DIR}/fs/"
+
+        cd "${KERNEL_DIR}"
+        if ! patch -p1 --fuzz=3 -i "${NOMOUNT_DIR}/hookless/patches/nomount_kernel_integration.patch"; then
+          echo "::error::NoMount integration patch failed. Dumping .rej files..."
+          find . -name "*.rej" -exec echo "--- {} ---" \; -exec cat {} \;
+          exit 1
+        fi
+
+        if ! grep -q 'vfs_map_meta_override' "${KERNEL_DIR}/fs/proc/task_mmu.c"; then
+          echo "::error::vfs_map_meta_override not found in task_mmu.c after patch"
+          exit 1
+        fi
+
+        echo "FEATURES=${FEATURES:-} nomount" >> "${GITHUB_ENV}"
+        echo "NoMount applied ✅"
+        echo "::endgroup::"
+
     - name: Patch Ptrace
       shell: bash
       run: |
@@ -539,6 +603,20 @@ runs:
           -e CONFIG_KSU_SUSFS_OPEN_REDIRECT \
           -e CONFIG_KSU_SUSFS_SUS_MAP \
           -d CONFIG_KSU_SUSFS_SUS_SU
+
+    - name: Add NoMount Configuration Settings
+      if: ${{ inputs.use_nomount == 'true' }}
+      shell: bash
+      run: |
+        set -euo pipefail
+        echo "::group::Adding NoMount configs..."
+        cd "${ROOT_DIR}/common"
+
+        ./scripts/config --file arch/arm64/configs/kernel.config \
+          -e CONFIG_NOMOUNT
+
+        echo "NoMount config added ✅"
+        echo "::endgroup::"
 
     - name: Add Oneplus BBR
       shell: bash
