@@ -1089,6 +1089,7 @@ runs:
 
         ./scripts/config --file arch/arm64/configs/kernel.config \
           -e CONFIG_NET_SCH_FQ \
+          -e CONFIG_TCP_CONG_ROCCET \
           -e CONFIG_NET_SCH_FQ_CODEL \
           -e CONFIG_NET_SCH_CAKE \
           -e CONFIG_NET_SCH_PIE \
