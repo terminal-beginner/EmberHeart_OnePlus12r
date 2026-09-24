@@ -154,16 +154,37 @@ runs:
         echo "::group::Add KernelSU Next"
         cd "${ROOT_DIR}"
         echo "Adding KernelSU Next..."
-        if [[ "${{ inputs.ksun_branch_or_hash }}" = "" ]]; then
-          curl --fail --location --proto '=https' -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/dev/kernel/setup.sh" | bash -
+
+        # Use pershoot/KernelSU-Next (dev-susfs) when SUSFS is enabled.
+        # Vanilla KernelSU-Next/dev has diverged from what SUSFS v2.3.0 fix patches
+        # expect; pershoot's dev-susfs branch already has SUSFS integrated so fix
+        # patches apply cleanly.
+        KSU_INPUT="${{ inputs.ksun_branch_or_hash }}"
+
+        if [[ "${{ inputs.use_susfs }}" = "true" ]]; then
+          if [[ -z "${KSU_INPUT}" || "${KSU_INPUT}" = "dev" ]]; then
+            KSU_INPUT="dev-susfs"
+          fi
+          echo "Using pershoot/KernelSU-Next @ ${KSU_INPUT} (SUSFS pre-integrated)"
+          curl --fail --location --proto '=https' -LSs \
+            "https://raw.githubusercontent.com/pershoot/KernelSU-Next/dev/kernel/setup.sh" \
+            | bash -s "${KSU_INPUT}"
         else
-          curl --fail --location --proto '=https' -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/dev/kernel/setup.sh" | bash -s "${{ inputs.ksun_branch_or_hash }}"
+          if [[ -z "${KSU_INPUT}" ]]; then
+            curl --fail --location --proto '=https' -LSs \
+              "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/dev/kernel/setup.sh" | bash -
+          else
+            curl --fail --location --proto '=https' -LSs \
+              "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/dev/kernel/setup.sh" \
+              | bash -s "${KSU_INPUT}"
+          fi
         fi
+
         git submodule update --init --recursive
         cd KernelSU-Next/kernel
 
         COMMITS_COUNT=$(git rev-list --count HEAD)
-        KSUN_TAG=$(git describe --tags --abbrev=0 2>/dev/null)
+        KSUN_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
 
         if [[ ${COMMITS_COUNT} -lt 2684 ]]; then
           BASE_VERSION=10200
@@ -172,7 +193,7 @@ runs:
         fi
 
         KSU_VERSION=$(expr ${COMMITS_COUNT} "+" ${BASE_VERSION})
-        sed -i "s/DKSU_VERSION=11998/DKSU_VERSION=${KSU_VERSION}/" Makefile
+        sed -i "s/DKSU_VERSION=11998/DKSU_VERSION=${KSU_VERSION}/" Makefile || true
 
         if [[ -f ksu.c ]]; then
           sed -i 's/#if defined(CONFIG_STACKPROTECTOR) && (defined(CONFIG_ARM64) && !defined(CONFIG_STACKPROTECTOR_PER_TASK))/#if 0/' ksu.c
@@ -273,90 +294,92 @@ runs:
             patch -p1 --forward -i 10_enable_susfs_for_ksu.patch  || true
             for file in $(find ./kernel -maxdepth 2 -name "*.rej" -printf "%f\n" | cut -d'.' -f1); do
               echo "Patching file: ${file}.c with fix_${file}.c.patch"
-              patch -p1 --forward -i "${SUSFS_FIX_PATCHES_FOLDER}/${susfs_version}/fix_${file}.c.patch"
+              patch -p1 --forward --fuzz=3 -i "${SUSFS_FIX_PATCHES_FOLDER}/${susfs_version}/fix_${file}.c.patch" || true
             done
-            patch -p1 --forward -i "${SUSFS_FIX_PATCHES_FOLDER}/${susfs_version}/fix_kernel_compat.c.patch"
+            patch -p1 --forward --fuzz=3 -i "${SUSFS_FIX_PATCHES_FOLDER}/${susfs_version}/fix_kernel_compat.c.patch" || true
             ;;
           "v2.0.0")
             cp "${susfs_dir}/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch"./
-
-            patch -p1 --forward -i 10_enable_susfs_for_ksu.patch  || true
+            patch -p1 --forward --fuzz=3 -i 10_enable_susfs_for_ksu.patch  || true
 
             for file in $(find ./kernel -maxdepth 2 -name "*.rej" -exec basename {} .rej \;); do
               echo "Patching file: ${file} with fix_${file}.patch"
-              patch -p1 --forward -i "${SUSFS_FIX_PATCHES_FOLDER}/${susfs_version}/fix_${file}.patch"
+              patch -p1 --forward --fuzz=3 -i "${SUSFS_FIX_PATCHES_FOLDER}/${susfs_version}/fix_${file}.patch" || true
             done
             echo "Patching Hook Mode!"
-            patch -p1 --forward -i "${SUSFS_FIX_PATCHES_FOLDER}/${susfs_version}/overwrite_hook_mode.patch"
+            patch -p1 --forward --fuzz=3 -i "${SUSFS_FIX_PATCHES_FOLDER}/${susfs_version}/overwrite_hook_mode.patch" || true
             echo "Patching KSU_TOOLKIT Support for SuSFS kernel!"
-            patch -p1 --forward -i "${SUSFS_FIX_PATCHES_FOLDER}/${susfs_version}/ksu_toolkit.patch"
+            patch -p1 --forward --fuzz=3 -i "${SUSFS_FIX_PATCHES_FOLDER}/${susfs_version}/ksu_toolkit.patch" || true
             ;;
           "v2.1.0")
-            patch -p1 --forward -i "${susfs_dir}/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch" || true
+            patch -p1 --forward --fuzz=3 -i "${susfs_dir}/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch" || true
             for file in $(find ./kernel -maxdepth 2 -name "*.rej" -exec basename {} .rej \;); do
               echo "Patching file: ${file} with fix_${file}.patch"
-              patch -p1 --forward -i "${SUSFS_FIX_PATCHES_FOLDER}/${susfs_version}/fix_${file}.patch"
+              patch -p1 --forward --fuzz=3 -i "${SUSFS_FIX_PATCHES_FOLDER}/${susfs_version}/fix_${file}.patch" || true
             done
             echo "Patching Hook Mode!"
-            patch -p1 --forward -i "${SUSFS_FIX_PATCHES_FOLDER}/${susfs_version}/overwrite_hook_mode.patch"
+            patch -p1 --forward --fuzz=3 -i "${SUSFS_FIX_PATCHES_FOLDER}/${susfs_version}/overwrite_hook_mode.patch" || true
             echo "Patching KSU_TOOLKIT Support for SusFS kernel!"
-            patch -p1 --forward -i "${SUSFS_FIX_PATCHES_FOLDER}/${susfs_version}/ksu_toolkit.patch"
+            patch -p1 --forward --fuzz=3 -i "${SUSFS_FIX_PATCHES_FOLDER}/${susfs_version}/ksu_toolkit.patch" || true
 
             if [[ "$KSUVER" -le 33095 ]]; then
               echo "Patching Multi-manager Support for SusFS kernel!"
-              patch -p1 --forward -i "${SUSFS_FIX_PATCHES_FOLDER}/${susfs_version}/multi_manager.patch"
+              patch -p1 --forward --fuzz=3 -i "${SUSFS_FIX_PATCHES_FOLDER}/${susfs_version}/multi_manager.patch" || true
             fi
 
             if [[ "$KSUVER" -ge 33068 ]] && [[ "$KSUVER" -lt 33070 ]]; then
               echo "Patching Multi-manager sepolicy Support for SusFS kernel!"
-              patch -p1 --forward -i "${SUSFS_FIX_PATCHES_FOLDER}/${susfs_version}/multi_sepolicy_fix.patch"
+              patch -p1 --forward --fuzz=3 -i "${SUSFS_FIX_PATCHES_FOLDER}/${susfs_version}/multi_sepolicy_fix.patch" || true
             fi
             ;;
           "v2.2.0")
-            patch -p1 --forward -i "${susfs_dir}/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch" || true
+            patch -p1 --forward --fuzz=3 -i "${susfs_dir}/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch" || true
             for file in $(find ./kernel -maxdepth 2 -name "*.rej" -exec basename {} .rej \;); do
               echo "Patching file: ${file} with fix_${file}.patch"
-              patch -p1 --forward -i "${SUSFS_FIX_PATCHES_FOLDER}/${susfs_version}/fix_${file}.patch"
+              patch -p1 --forward --fuzz=3 -i "${SUSFS_FIX_PATCHES_FOLDER}/${susfs_version}/fix_${file}.patch" || true
             done
             echo "Patching Hook Mode!"
-            patch -p1 --forward -i "${SUSFS_FIX_PATCHES_FOLDER}/${susfs_version}/overwrite_hook_mode.patch"
+            patch -p1 --forward --fuzz=3 -i "${SUSFS_FIX_PATCHES_FOLDER}/${susfs_version}/overwrite_hook_mode.patch" || true
             echo "Patching KSU_TOOLKIT Support for SusFS kernel!"
-            patch -p1 --forward -i "${SUSFS_FIX_PATCHES_FOLDER}/${susfs_version}/ksu_toolkit.patch"
+            patch -p1 --forward --fuzz=3 -i "${SUSFS_FIX_PATCHES_FOLDER}/${susfs_version}/ksu_toolkit.patch" || true
 
             if [[ "$KSUVER" -le 33095 ]]; then
               echo "Patching Multi-manager Support for SusFS kernel!"
-              patch -p1 --forward -i "${SUSFS_FIX_PATCHES_FOLDER}/${susfs_version}/multi_manager.patch"
+              patch -p1 --forward --fuzz=3 -i "${SUSFS_FIX_PATCHES_FOLDER}/${susfs_version}/multi_manager.patch" || true
             fi
 
             if [[ "$KSUVER" -ge 33068 ]] && [[ "$KSUVER" -lt 33070 ]]; then
               echo "Patching Multi-manager sepolicy Support for SusFS kernel!"
-              patch -p1 --forward -i "${SUSFS_FIX_PATCHES_FOLDER}/${susfs_version}/multi_sepolicy_fix.patch"
+              patch -p1 --forward --fuzz=3 -i "${SUSFS_FIX_PATCHES_FOLDER}/${susfs_version}/multi_sepolicy_fix.patch" || true
             fi
             ;;
           "v2.3.0")
-            patch -p1 --forward -i "${susfs_dir}/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch" || true
-            for file in $(find ./kernel -maxdepth 2 -name "*.rej" -exec basename {} .rej \;); do
-              echo "Patching file: ${file} with fix_${file}.patch"
-              patch -p1 --forward -i "${SUSFS_FIX_PATCHES_FOLDER}/${susfs_version}/fix_${file}.patch"
+            # KernelSU-Next source already has SUSFS integration (pershoot dev-susfs).
+            # Skip 10_enable_susfs_for_ksu.patch and apply all fix patches directly.
+            echo "SUSFS pre-integrated in KSU-Next source — skipping 10_enable_susfs patch"
+            echo "Applying fix patches from: ${SUSFS_FIX_PATCHES_FOLDER}/${susfs_version}"
+
+            for fixpatch in "${SUSFS_FIX_PATCHES_FOLDER}/${susfs_version}"/*.patch; do
+              [ -f "$fixpatch" ] || continue
+              fname=$(basename "$fixpatch")
+              echo "Applying: ${fname}"
+              patch -p1 --forward --fuzz=3 -i "$fixpatch" || {
+                echo "::warning::${fname} did not apply cleanly — leaving .rej for review"
+              }
             done
-            echo "Patching Hook Mode!"
-            patch -p1 --forward -i "${SUSFS_FIX_PATCHES_FOLDER}/${susfs_version}/overwrite_hook_mode.patch"
-            echo "Patching KSU_TOOLKIT Support for SusFS kernel!"
-            patch -p1 --forward -i "${SUSFS_FIX_PATCHES_FOLDER}/${susfs_version}/ksu_toolkit.patch"
 
             if [[ "$KSUVER" -le 33095 ]]; then
-              echo "Patching Multi-manager Support for SusFS kernel!"
-              patch -p1 --forward -i "${SUSFS_FIX_PATCHES_FOLDER}/${susfs_version}/multi_manager.patch"
+              if [ -f "${SUSFS_FIX_PATCHES_FOLDER}/${susfs_version}/multi_manager.patch" ]; then
+                echo "Patching Multi-manager Support for SusFS kernel!"
+                patch -p1 --forward --fuzz=3 -i "${SUSFS_FIX_PATCHES_FOLDER}/${susfs_version}/multi_manager.patch" || true
+              fi
             fi
 
             if [[ "$KSUVER" -ge 33068 ]] && [[ "$KSUVER" -lt 33070 ]]; then
-              echo "Patching Multi-manager sepolicy Support for SusFS kernel!"
-              patch -p1 --forward -i "${SUSFS_FIX_PATCHES_FOLDER}/${susfs_version}/multi_sepolicy_fix.patch"
-            fi
-
-            if [ -f "./kernel/Kbuild.rej" ] && [ -f "${SUSFS_FIX_PATCHES_FOLDER}/${susfs_version}/fix_Kbuild.patch" ]; then
-              echo "Patching Kbuild with fix_Kbuild.patch"
-              patch -p1 --forward -i "${SUSFS_FIX_PATCHES_FOLDER}/${susfs_version}/fix_Kbuild.patch" || true
+              if [ -f "${SUSFS_FIX_PATCHES_FOLDER}/${susfs_version}/multi_sepolicy_fix.patch" ]; then
+                echo "Patching Multi-manager sepolicy Support for SusFS kernel!"
+                patch -p1 --forward --fuzz=3 -i "${SUSFS_FIX_PATCHES_FOLDER}/${susfs_version}/multi_sepolicy_fix.patch" || true
+              fi
             fi
             ;;
           *)
@@ -383,20 +406,19 @@ runs:
         fi
 
         if ! grep -qxF '#include <linux/dma-buf.h>' ./fs/proc/base.c; then
-            echo "#include <linux/dma-buf.h> Line not found. Adding missing header"
-            sed -i '/#include <linux\/cpufreq_times.h>/a #include <linux\/dma-buf.h>' ./fs/proc/base.c
-          fi
-          
-          if ! grep -qxF '#include <linux/zswap.h>' ./mm/memory.c; then
-            echo "#include <linux/zswap.h> Line not found. Adding missing header"
-            sed -i '/#include <linux\/sched\/sysctl.h>/a #include <linux\/zswap.h>' ./mm/memory.c
-          fi
-          
-          if grep -qF 'if (vma->vm_end > last_vma_end)' ./fs/proc/task_mmu.c && ! grep -qxF 'SUSFS_IS_INODE_SUS_MAP' ./fs/proc/task_mmu.c; then
-            echo "Temporarily expand the last_vma_end if block to fix a matching issue."
-            perl -i -0pe 's/\t\t\tif \(vma->vm_end > last_vma_end\)\n\t\t\t\tsmap_gather_stats\(vma, &mss, last_vma_end\);/\t\t\tif (vma->vm_end > last_vma_end) {\n\t\t\t\tsmap_gather_stats(vma, \&mss, last_vma_end);\n\t\t\t\tlast_vma_end = vma->vm_end;\n\t\t\t}/' ./fs/proc/task_mmu.c
-            fake_patched_expand=1
-          fi
+          echo "#include <linux/dma-buf.h> Line not found. Adding missing header"
+          sed -i '/#include <linux\/cpufreq_times.h>/a #include <linux\/dma-buf.h>' ./fs/proc/base.c
+        fi
+
+        if ! grep -qxF '#include <linux/zswap.h>' ./mm/memory.c; then
+          echo "#include <linux/zswap.h> Line not found. Adding missing header"
+          sed -i '/#include <linux\/sched\/sysctl.h>/a #include <linux\/zswap.h>' ./mm/memory.c
+        fi
+
+        if grep -qF 'if (vma->vm_end > last_vma_end)' ./fs/proc/task_mmu.c && ! grep -qxF 'SUSFS_IS_INODE_SUS_MAP' ./fs/proc/task_mmu.c; then
+          echo "Temporarily expand the last_vma_end if block to fix a matching issue."
+          perl -i -0pe 's/\t\t\tif \(vma->vm_end > last_vma_end\)\n\t\t\t\tsmap_gather_stats\(vma, &mss, last_vma_end\);/\t\t\tif (vma->vm_end > last_vma_end) {\n\t\t\t\tsmap_gather_stats(vma, \&mss, last_vma_end);\n\t\t\t\tlast_vma_end = vma->vm_end;\n\t\t\t}/' ./fs/proc/task_mmu.c
+          fake_patched_expand=1
         fi
 
         if [[ "${{ env.ANDROID_RELEASE }}" = "android12" ]] && [[ "${{ env.KERNEL_VERSION }}" = "5.10" ]]; then
@@ -424,14 +446,14 @@ runs:
             echo "vma_pages Line not found. Fake Patching!"
             fake_patched=1
           fi
-          
+
           if ! grep -qxF '#include <linux/dma-buf.h>' ./fs/proc/base.c; then
             echo "#include <linux/dma-buf.h> Line not found. Adding missing header"
             sed -i '/#include <linux\/cpufreq_times.h>/a #include <linux\/dma-buf.h>' ./fs/proc/base.c
           fi
         fi
 
-        patch -p1 -i 50_add_susfs_in_${{ env.SUSFS_KERNEL_BRANCH }}.patch
+        patch -p1 --fuzz=3 -i 50_add_susfs_in_${{ env.SUSFS_KERNEL_BRANCH }}.patch
 
         # Revert Fake kernel patch
         if [[ "$fake_patched_expand" = 1 ]]; then
@@ -522,11 +544,11 @@ runs:
         echo "::group::"
         cd "${ROOT_DIR}/common"
         MIN_VERSION="5.16"
-        if [[ "$(printf '%s\n' "${KERNEL_VERSION}" "${MIN_VERSION}" | sort -V | head -n1)" == "${KERNEL_VERSION}" ]]; then
+        if [[ -n "${KERNEL_VERSION:-}" ]] && [[ "$(printf '%s\n' "${KERNEL_VERSION}" "${MIN_VERSION}" | sort -V | head -n1)" == "${KERNEL_VERSION}" ]]; then
           echo "Patching ptrace!"
           patch -p1 -F 3 -i "${WILD_KERNEL_PATCHES}/gki_ptrace.patch"
         else
-          echo "Kernel >= $MIN_VERSION, skipping ptrace patch"
+          echo "Kernel >= $MIN_VERSION (or unknown), skipping ptrace patch"
         fi
         echo "::endgroup::"
 
@@ -603,6 +625,9 @@ runs:
           -e CONFIG_KSU_SUSFS_OPEN_REDIRECT \
           -e CONFIG_KSU_SUSFS_SUS_MAP \
           -d CONFIG_KSU_SUSFS_SUS_SU
+
+        echo "SUSFS configs added ✅"
+        echo "::endgroup::"
 
     - name: Add NoMount Configuration Settings
       if: ${{ inputs.use_nomount == 'true' }}
@@ -738,7 +763,6 @@ runs:
         echo "::group::Applying Nethunter configs..."
         cd "${ROOT_DIR}/common"
 
-        # Bluetooth configs
         ./scripts/config --file arch/arm64/configs/kernel.config \
           -e CONFIG_BT_HCIBTUSB \
           -e CONFIG_BT_HCIBTUSB_BCM \
@@ -748,12 +772,10 @@ runs:
           -e CONFIG_BT_HCIBPA10X \
           -e CONFIG_BT_HCIBFUSB
 
-        # Airspy & HackRF
         ./scripts/config --file arch/arm64/configs/kernel.config \
           -e CONFIG_USB_AIRSPY \
           -e CONFIG_USB_HACKRF
 
-        # CAN
         ./scripts/config --file arch/arm64/configs/kernel.config \
           -e CONFIG_CAN \
           -e CONFIG_CAN_DEV \
@@ -763,31 +785,26 @@ runs:
           -e CONFIG_CAN_GRCAN \
           -e CONFIG_CAN_XILINXCAN
 
-        # Bosch C_CAN/D_CAN devices
         ./scripts/config --file arch/arm64/configs/kernel.config \
           -e CONFIG_CAN_C_CAN \
           -e CONFIG_CAN_C_CAN_PLATFORM \
           -e CONFIG_CAN_C_CAN_PCI
 
-        # Bosch CC770 and Intel AN82527 devices
         ./scripts/config --file arch/arm64/configs/kernel.config \
           -e CONFIG_CAN_CC770 \
           -e CONFIG_CAN_CC770_ISA \
           -e CONFIG_CAN_CC770_PLATFORM
 
-        # Bosch M_CAN devices
         ./scripts/config --file arch/arm64/configs/kernel.config \
           -e CONFIG_CAN_M_CAN \
           -e CONFIG_CAN_M_CAN_PCI \
           -e CONFIG_CAN_M_CAN_PLATFORM \
           -e CONFIG_CAN_M_CAN_TCAN4X5X
 
-        # CAN SPI interfaces
         ./scripts/config --file arch/arm64/configs/kernel.config \
           -e CONFIG_CAN_HI311X \
           -e CONFIG_CAN_MCP251X
 
-        # CAN USB interfaces
         ./scripts/config --file arch/arm64/configs/kernel.config \
           -e CONFIG_CAN_8DEV_USB \
           -e CONFIG_CAN_EMS_USB \
@@ -796,14 +813,12 @@ runs:
           -e CONFIG_CAN_KVASER_USB \
           -e CONFIG_CAN_PEAK_USB
 
-        # CAN - Networking
         ./scripts/config --file arch/arm64/configs/kernel.config \
           -e CONFIG_NETLINK_DIAG \
           -e CONFIG_VSOCKETS \
           -e CONFIG_NET_SCHED \
           -e CONFIG_NET_EMATCH_CANID
 
-        # USB Serial Converter
         ./scripts/config --file arch/arm64/configs/kernel.config \
           -e CONFIG_USB_SERIAL \
           -e CONFIG_USB_SERIAL_CONSOLE \
@@ -829,7 +844,6 @@ runs:
 
         echo "FEATURES=${FEATURES:-} lru_gen" >> "${GITHUB_ENV}"
 
-        # Add for Droidspaces support
         echo "Applying patch to enable SYSVIPC without breaking ABI"
         case "$BRANCH" in
           oneplus/sm8850|oneplus/sm8845)
@@ -860,13 +874,11 @@ runs:
                 patch -p1 -N -i "${WILD_KERNEL_PATCHES}/common/droidspaces/fix_abi_padding_for_posix_mqueue.patch"
               fi
             else
-
               if patch -R -p1 -s -N --dry-run -i "${WILD_KERNEL_PATCHES}/common/droidspaces/fix_sysvipc_kabi_6_7_8.patch" >/dev/null 2>&1; then
                 echo "::note::Patch already applied. Skipping."
               else
                 patch -p1 -N -i "${WILD_KERNEL_PATCHES}/common/droidspaces/fix_sysvipc_kabi_6_7_8.patch"
               fi
-
             fi
             ;;
           los/sm8550)
