@@ -489,13 +489,17 @@ runs:
         echo "SuSFS added ✅"
         echo "::endgroup::"
 
+    # ─────────────────────────────────────────────────────────────
+    # ONLY THIS STEP CHANGED — uses apply_nomount_stack.sh hookless
+    # instead of manual cp + patch of nomount_kernel_integration.patch
+    # ─────────────────────────────────────────────────────────────
     - name: Apply NoMount Patches
       id: add_nomount
       if: ${{ inputs.use_nomount == 'true' }}
       shell: bash
       run: |
         set -euo pipefail
-        echo "::group::Applying NoMount patches..."
+        echo "::group::Applying NoMount via Bouteillepleine orchestration script..."
 
         NOMOUNT_DIR="${GITHUB_WORKSPACE}/nomount-suite"
         KERNEL_DIR="${ROOT_DIR}/common"
@@ -505,24 +509,37 @@ runs:
           exit 1
         fi
 
-        cp "${NOMOUNT_DIR}/hookless/src/nomount.c" "${KERNEL_DIR}/fs/nomount.c"
-        cp "${NOMOUNT_DIR}/hookless/src/nomount.h" "${KERNEL_DIR}/fs/nomount.h"
-        echo "Copied nomount.c and nomount.h to ${KERNEL_DIR}/fs/"
+        # Ensure Bouteillepleine kernel_patches is available.
+        # If use_susfs was true, "Clone susfs" already cloned it.
+        # If use_susfs is false, we clone it here.
+        if [ -z "${BOUTON_KERNEL_PATCHES:-}" ] || [ ! -f "${BOUTON_KERNEL_PATCHES}/scripts/apply_nomount_stack.sh" ]; then
+          BOUTON_DIR="${GITHUB_WORKSPACE}/bouton_kernel_patches"
+          rm -rf "${BOUTON_DIR}"
+          echo "Fetching Bouteillepleine kernel_patches for orchestration script..."
+          git clone --depth=1 https://github.com/Bouteillepleine/kernel_patches.git "${BOUTON_DIR}"
+          echo "BOUTON_KERNEL_PATCHES=${BOUTON_DIR}" >> "${GITHUB_ENV}"
+        fi
 
-        cd "${KERNEL_DIR}"
-        if ! patch -p1 --fuzz=3 -i "${NOMOUNT_DIR}/hookless/patches/nomount_kernel_integration.patch"; then
-          echo "::error::NoMount integration patch failed. Dumping .rej files..."
-          find . -name "*.rej" -exec echo "--- {} ---" \; -exec cat {} \;
+        if [ ! -f "${BOUTON_KERNEL_PATCHES}/scripts/apply_nomount_stack.sh" ]; then
+          echo "::error::apply_nomount_stack.sh not found at ${BOUTON_KERNEL_PATCHES}/scripts/"
           exit 1
         fi
 
+        cd "${KERNEL_DIR}"
+
+        # Use the orchestrated script instead of manually copying files and patching.
+        # This coordinates file-modification order with SUSFS (if applied) so
+        # shared files like fs/proc/task_mmu.c don't conflict.
+        bash "${BOUTON_KERNEL_PATCHES}/scripts/apply_nomount_stack.sh" hookless
+
         if ! grep -q 'vfs_map_meta_override' "${KERNEL_DIR}/fs/proc/task_mmu.c"; then
           echo "::error::vfs_map_meta_override not found in task_mmu.c after patch"
+          find "${KERNEL_DIR}" -name "*.rej" -exec echo "--- {} ---" \; -exec cat {} \;
           exit 1
         fi
 
         echo "FEATURES=${FEATURES:-} nomount" >> "${GITHUB_ENV}"
-        echo "NoMount applied ✅"
+        echo "NoMount applied via orchestration script ✅"
         echo "::endgroup::"
 
     - name: Patch Ptrace
@@ -1082,18 +1099,6 @@ runs:
         echo "Traffic schedulers (qdisc) enabled ✅"
         echo "::endgroup::"
 
-    # ─────────────────────────────────────────────────────────────
-    # NEW: Disable KUnit test modules — GOT/PLT linker fix
-    #
-    # These KUnit test modules emit GOT/PLT entries that trip the
-    # kernel linker-script assertion (`Unexpected GOT/PLT entries
-    # detected!` / `Unexpected run-time procedure linkages detected!`)
-    # on ld.lld 14.0.7 during vmlinux link.
-    #
-    # Writes "# CONFIG_X is not set" markers into the kernel.config
-    # fragment, which override the parent gki_defconfig during the
-    # fragment merge in the build step.
-    # ─────────────────────────────────────────────────────────────
     - name: Disable KUnit test modules (GOT/PLT linker fix)
       shell: bash
       run: |
