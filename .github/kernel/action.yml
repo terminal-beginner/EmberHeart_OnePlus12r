@@ -490,8 +490,7 @@ runs:
         echo "::endgroup::"
 
     # ─────────────────────────────────────────────────────────────
-    # ONLY THIS STEP CHANGED — uses apply_nomount_stack.sh hookless
-    # instead of manual cp + patch of nomount_kernel_integration.patch
+    # FIXED: exports COMMON_KERNEL_FOLDER + NOMOUNT_DIR before invoking script
     # ─────────────────────────────────────────────────────────────
     - name: Apply NoMount Patches
       id: add_nomount
@@ -510,8 +509,6 @@ runs:
         fi
 
         # Ensure Bouteillepleine kernel_patches is available.
-        # If use_susfs was true, "Clone susfs" already cloned it.
-        # If use_susfs is false, we clone it here.
         if [ -z "${BOUTON_KERNEL_PATCHES:-}" ] || [ ! -f "${BOUTON_KERNEL_PATCHES}/scripts/apply_nomount_stack.sh" ]; then
           BOUTON_DIR="${GITHUB_WORKSPACE}/bouton_kernel_patches"
           rm -rf "${BOUTON_DIR}"
@@ -525,11 +522,12 @@ runs:
           exit 1
         fi
 
+        # Export env vars the orchestration script expects
+        export COMMON_KERNEL_FOLDER="${KERNEL_DIR}"
+        export NOMOUNT_DIR="${NOMOUNT_DIR}"
+
         cd "${KERNEL_DIR}"
 
-        # Use the orchestrated script instead of manually copying files and patching.
-        # This coordinates file-modification order with SUSFS (if applied) so
-        # shared files like fs/proc/task_mmu.c don't conflict.
         bash "${BOUTON_KERNEL_PATCHES}/scripts/apply_nomount_stack.sh" hookless
 
         if ! grep -q 'vfs_map_meta_override' "${KERNEL_DIR}/fs/proc/task_mmu.c"; then
