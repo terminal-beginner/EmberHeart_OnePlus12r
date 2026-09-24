@@ -490,7 +490,7 @@ runs:
         echo "::endgroup::"
 
     # ─────────────────────────────────────────────────────────────
-    # FIXED: exports COMMON_KERNEL_FOLDER + NOMOUNT_DIR before invoking script
+    # FIXED: ghost is SKIPPED when SUSFS is enabled (same files, same purpose)
     # ─────────────────────────────────────────────────────────────
     - name: Apply NoMount Patches
       id: add_nomount
@@ -508,27 +508,49 @@ runs:
           exit 1
         fi
 
-        # Ensure Bouteillepleine kernel_patches is available.
-        if [ -z "${BOUTON_KERNEL_PATCHES:-}" ] || [ ! -f "${BOUTON_KERNEL_PATCHES}/scripts/apply_nomount_stack.sh" ]; then
+        BOUTON_KERNEL_PATCHES="${BOUTON_KERNEL_PATCHES:-}"
+
+        if [ -z "${BOUTON_KERNEL_PATCHES}" ] || [ ! -f "${BOUTON_KERNEL_PATCHES}/scripts/apply_nomount_stack.sh" ]; then
           BOUTON_DIR="${GITHUB_WORKSPACE}/bouton_kernel_patches"
           rm -rf "${BOUTON_DIR}"
           echo "Fetching Bouteillepleine kernel_patches for orchestration script..."
           git clone --depth=1 https://github.com/Bouteillepleine/kernel_patches.git "${BOUTON_DIR}"
+          BOUTON_KERNEL_PATCHES="${BOUTON_DIR}"
           echo "BOUTON_KERNEL_PATCHES=${BOUTON_DIR}" >> "${GITHUB_ENV}"
         fi
+
+        export BOUTON_KERNEL_PATCHES
 
         if [ ! -f "${BOUTON_KERNEL_PATCHES}/scripts/apply_nomount_stack.sh" ]; then
           echo "::error::apply_nomount_stack.sh not found at ${BOUTON_KERNEL_PATCHES}/scripts/"
           exit 1
         fi
 
-        # Export env vars the orchestration script expects
         export COMMON_KERNEL_FOLDER="${KERNEL_DIR}"
         export NOMOUNT_DIR="${NOMOUNT_DIR}"
+        export BOUTEILLE_KERNEL_PATCHES_FOLDER="${BOUTON_KERNEL_PATCHES}"
+        export BOUTEILLE_KERNEL_PATCHES="${BOUTON_KERNEL_PATCHES}"
+        export KSU_FOLDER="${ksun_dir:-${ROOT_DIR}/KernelSU-Next}"
+        export KSUN_FOLDER="${ksun_dir:-${ROOT_DIR}/KernelSU-Next}"
 
         cd "${KERNEL_DIR}"
 
+        echo "-- Subcommand 1/4: hookless"
         bash "${BOUTON_KERNEL_PATCHES}/scripts/apply_nomount_stack.sh" hookless
+
+        echo "-- Subcommand 2/4: record-version"
+        bash "${BOUTON_KERNEL_PATCHES}/scripts/apply_nomount_stack.sh" record-version
+
+        echo "-- Subcommand 3/4: hook"
+        bash "${BOUTON_KERNEL_PATCHES}/scripts/apply_nomount_stack.sh" hook
+
+        if [ "${{ inputs.use_susfs }}" = "true" ]; then
+          echo "-- Subcommand 4/4: ghost SKIPPED (SUSFS 2.3.0 already does path cloaking)"
+          echo "::notice::ghost skipped — SUSFS provides equivalent path hiding on same files"
+        else
+          echo "-- Subcommand 4/4: ghost"
+          bash "${BOUTON_KERNEL_PATCHES}/scripts/apply_nomount_stack.sh" ghost
+        fi
 
         if ! grep -q 'vfs_map_meta_override' "${KERNEL_DIR}/fs/proc/task_mmu.c"; then
           echo "::error::vfs_map_meta_override not found in task_mmu.c after patch"
