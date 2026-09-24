@@ -159,8 +159,6 @@ runs:
         cd "${ROOT_DIR}"
         echo "Adding KernelSU Next..."
 
-        # Always clone vanilla KernelSU-Next. SUSFS is enabled later by applying
-        # 10_enable_susfs_for_ksu.patch from the simonpunk/susfs4ksu repo.
         KSU_INPUT="${{ inputs.ksun_branch_or_hash }}"
 
         if [[ -z "${KSU_INPUT}" ]]; then
@@ -746,10 +744,6 @@ runs:
         echo "Other kernel patches applied 🔥"
         echo "::endgroup::"
 
-    # ─────────────────────────────────────────────────────────────
-    # NEW: Fake config.gz patch — hides custom kernel indicators
-    # from /proc/config.gz so detection apps can't read real config
-    # ─────────────────────────────────────────────────────────────
     - name: Apply Fake config.gz patch
       shell: bash
       run: |
@@ -770,7 +764,6 @@ runs:
           echo "::warning::fake_config patch had hunks that didn't apply cleanly — continuing"
         fi
 
-        # Configs to hide from /proc/config.gz (reveal custom kernel / root)
         HIDE_LIST=(
           "CONFIG_KSU"
           "CONFIG_KSU_SUSFS"
@@ -797,10 +790,6 @@ runs:
         done
         echo "::endgroup::"
 
-    # ─────────────────────────────────────────────────────────────
-    # NEW: Vendor debloat — blacklist non-critical vendor modules
-    # from being built (safe list; risky modules auto-skipped)
-    # ─────────────────────────────────────────────────────────────
     - name: Disable Vendor / Kernel Modules
       shell: bash
       run: |
@@ -808,7 +797,6 @@ runs:
         echo "::group::Disable Vendor / Kernel Modules"
         cd "${ROOT_DIR}/common"
 
-        # Modules that MUST NEVER be blacklisted (system critical)
         RISKY_MODULES=(
           "coresight" "rust_binder" "msm_kgsl" "camera" "oplusboot"
           "rmnet_wlan" "rmnet_core" "msm_drm" "cnss2" "oplus_chg_v2"
@@ -823,7 +811,6 @@ runs:
           [[ -n "$mod" ]] && modules+=("$mod")
         done
 
-        # Auto-add network tuning modules (redundant with BBR/BBR3)
         for auto in "oplus_network_tuning" "oplus_networks_tuning"; do
           already=0
           for m in "${modules[@]}"; do
@@ -832,7 +819,6 @@ runs:
           [ "$already" = 0 ] && modules+=("$auto")
         done
 
-        # Safety filter: drop any risky modules
         declare -a validated=()
         for mod in "${modules[@]}"; do
           is_risky=false
@@ -854,10 +840,8 @@ runs:
         fi
 
         echo "Blacklisting modules: ${RESULT_LIST}"
-        echo "CONFIG_DEBOAT_VENDOR_MODULES_PLACEHOLDER=1" >> /dev/null || true
         echo "CONFIG_DEBLOAT_VENDOR_MODULES=${RESULT_LIST}" >> arch/arm64/configs/kernel.config
 
-        # Pick the right support patch for the kernel version
         MIN_VERSION="5.16"
         if [[ "$(printf '%s\n' "${KERNEL_VERSION}" "${MIN_VERSION}" | sort -V | head -n1)" == "${KERNEL_VERSION}" ]]; then
           VENDOR_PATCH="${WILD_KERNEL_PATCHES}/common/vendor_modules/0001-Support-conditional-vendor-modules-blacklisting-5.15-and-below.patch"
@@ -1096,4 +1080,46 @@ runs:
           -e CONFIG_NET_SCH_FQ_PIE
 
         echo "Traffic schedulers (qdisc) enabled ✅"
+        echo "::endgroup::"
+
+    # ─────────────────────────────────────────────────────────────
+    # NEW: Disable KUnit test modules — GOT/PLT linker fix
+    #
+    # These KUnit test modules emit GOT/PLT entries that trip the
+    # kernel linker-script assertion (`Unexpected GOT/PLT entries
+    # detected!` / `Unexpected run-time procedure linkages detected!`)
+    # on ld.lld 14.0.7 during vmlinux link.
+    #
+    # Writes "# CONFIG_X is not set" markers into the kernel.config
+    # fragment, which override the parent gki_defconfig during the
+    # fragment merge in the build step.
+    # ─────────────────────────────────────────────────────────────
+    - name: Disable KUnit test modules (GOT/PLT linker fix)
+      shell: bash
+      run: |
+        set -euo pipefail
+        echo "::group::Disable KUnit test modules"
+        cd "${ROOT_DIR}/common"
+
+        KUNIT_DISABLE_LIST=(
+          CONFIG_REGMAP_KUNIT
+          CONFIG_INPUT_KUNIT_TEST
+          CONFIG_SND_SOC_TOPOLOGY_KUNIT_TEST
+          CONFIG_SND_SOC_UTILS_KUNIT_TEST
+          CONFIG_HID_KUNIT_TEST
+          CONFIG_RTC_LIB_KUNIT_TEST
+          CONFIG_CLK_KUNIT_TEST
+          CONFIG_CLK_GATE_KUNIT_TEST
+          CONFIG_IIO_FORMAT_KUNIT_TEST
+          CONFIG_EXT4_KUNIT_TESTS
+          CONFIG_FAT_KUNIT_TEST
+        )
+
+        for sym in "${KUNIT_DISABLE_LIST[@]}"; do
+          ./scripts/config --file arch/arm64/configs/kernel.config -d "$sym"
+          echo "  disabled: $sym"
+        done
+
+        echo "FEATURES=${FEATURES:-} no_kunit" >> "${GITHUB_ENV}"
+        echo "KUnit test modules disabled (GOT/PLT linker fix) ✅"
         echo "::endgroup::"
