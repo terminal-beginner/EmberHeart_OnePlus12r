@@ -97,6 +97,19 @@ runs:
 
         echo "susfs_dir=$(pwd)" >> "${GITHUB_ENV}"
 
+        # Clone Bouteillepleine kernel_patches for v2.2.0+ SUSFS fix patches
+        cd "${GITHUB_WORKSPACE}"
+        BOUTON_DIR="${GITHUB_WORKSPACE}/bouton_kernel_patches"
+        rm -rf "${BOUTON_DIR}"
+        echo "Cloning Bouteillepleine kernel_patches..."
+        if git clone --depth=1 https://github.com/Bouteillepleine/kernel_patches.git "${BOUTON_DIR}"; then
+          echo "BOUTON_KERNEL_PATCHES=${BOUTON_DIR}" >> "${GITHUB_ENV}"
+          echo "Bouteillepleine kernel_patches cloned ✅"
+        else
+          echo "::warning::Failed to clone Bouteillepleine kernel_patches — falling back to WildKernels fix patches."
+          echo "BOUTON_KERNEL_PATCHES=" >> "${GITHUB_ENV}"
+        fi
+
     - name: Create custom defconfig fragment
       shell: bash
       run: |
@@ -168,8 +181,8 @@ runs:
       uses: nullptr-t-oss/composite_actions/fetch_ksu_manager@main
       with:
         ksu-type: ksun
-        dist-dir: ${DIST_DIR}
-        commit-hash: ${KSUN_COMMIT_SHA_FULL}
+        dist-dir: ${{ env.DIST_DIR }}
+        commit-hash: ${{ env.KSUN_COMMIT_SHA_FULL }}
         github-token: ${{ inputs.github_token }}
 
     - name: Apply SUSFS Patches
@@ -184,14 +197,23 @@ runs:
 
         shopt -s nullglob
         cp -t "${KERNEL_DIR}" "${susfs_dir}/kernel_patches/50_add_susfs_in_${SUSFS_KERNEL_BRANCH}.patch"
-        cp -t "${KERNEL_DIR}/fs" "${susfs_dir}/susfs4ksu/kernel_patches/fs/"*
+        cp -t "${KERNEL_DIR}/fs" "${susfs_dir}/kernel_patches/fs/"*
         cp -t "${KERNEL_DIR}/include/linux" "${susfs_dir}/kernel_patches/include/linux/"*
         shopt -u nullglob
 
         susfs_version=$(grep '#define SUSFS_VERSION' ${ROOT_DIR}/${KERNEL_DIR}/include/linux/susfs.h | awk -F'"' '{print $2}')
         echo "SUSVER=${susfs_version}" >> ${GITHUB_ENV}
-        echo "susfs_version=${susfs_version:-unknown}" >> ${GITHUB_OUTPUT}
+        echo "susfs_version=${susfs_version:-unknown}" >> "${GITHUB_OUTPUT}"
         echo "SuSFS Version: ${susfs_version}"
+
+        # Resolve fix patches source: Bouteillepleine primary (has v2.2.0/v2.3.0), WildKernels fallback
+        if [ -n "${BOUTON_KERNEL_PATCHES:-}" ] && [ -d "${BOUTON_KERNEL_PATCHES}/next/susfs_fix_patches/${susfs_version}" ]; then
+          SUSFS_FIX_PATCHES_FOLDER="${BOUTON_KERNEL_PATCHES}/next/susfs_fix_patches"
+          echo "Fix patches source: Bouteillepleine (${SUSFS_FIX_PATCHES_FOLDER})"
+        else
+          SUSFS_FIX_PATCHES_FOLDER="${WILD_KERNEL_PATCHES}/next/susfs_fix_patches"
+          echo "Fix patches source: WildKernels (${SUSFS_FIX_PATCHES_FOLDER})"
+        fi
 
         # Function to compare semantic versions
         version_lte() {
@@ -210,13 +232,13 @@ runs:
           "v1.5.8")
             cp "${susfs_dir}/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch" ./
             patch -p1 --forward --fuzz=3 -i 10_enable_susfs_for_ksu.patch  || true
-            cp "${WILD_KERNEL_PATCHES}/next/susfs_fix_patches/${susfs_version}/fix_apk_sign.c.patch" ./
+            cp "${SUSFS_FIX_PATCHES_FOLDER}/${susfs_version}/fix_apk_sign.c.patch" ./
             patch -p1 --forward --fuzz=3 -i fix_apk_sign.c.patch
-            cp "${WILD_KERNEL_PATCHES}/next/susfs_fix_patches/${susfs_version}/fix_core_hook.c.patch" ./
+            cp "${SUSFS_FIX_PATCHES_FOLDER}/${susfs_version}/fix_core_hook.c.patch" ./
             patch -p1 --forward --fuzz=3 -i fix_core_hook.c.patch
-            cp "${WILD_KERNEL_PATCHES}/next/susfs_fix_patches/${susfs_version}/fix_selinux.c.patch" ./
+            cp "${SUSFS_FIX_PATCHES_FOLDER}/${susfs_version}/fix_selinux.c.patch" ./
             patch -p1 --forward --fuzz=3 -i fix_selinux.c.patch
-            cp "${WILD_KERNEL_PATCHES}/next/susfs_fix_patches/${susfs_version}/fix_ksud.c.patch" ./
+            cp "${SUSFS_FIX_PATCHES_FOLDER}/${susfs_version}/fix_ksud.c.patch" ./
             patch -p1 --forward --fuzz=3 -i fix_ksud.c.patch
             ;;
           "v1.5.9"|"v1.5.10"|"v1.5.11"|"v1.5.12")
@@ -224,9 +246,9 @@ runs:
             patch -p1 --forward -i 10_enable_susfs_for_ksu.patch  || true
             for file in $(find ./kernel -maxdepth 2 -name "*.rej" -printf "%f\n" | cut -d'.' -f1); do
               echo "Patching file: ${file}.c with fix_${file}.c.patch"
-              patch -p1 --forward -i "${WILD_KERNEL_PATCHES}/next/susfs_fix_patches/${susfs_version}/fix_${file}.c.patch"
+              patch -p1 --forward -i "${SUSFS_FIX_PATCHES_FOLDER}/${susfs_version}/fix_${file}.c.patch"
             done
-            patch -p1 --forward -i "${WILD_KERNEL_PATCHES}/next/susfs_fix_patches/${susfs_version}/fix_kernel_compat.c.patch"
+            patch -p1 --forward -i "${SUSFS_FIX_PATCHES_FOLDER}/${susfs_version}/fix_kernel_compat.c.patch"
             ;;
           "v2.0.0")
             cp "${susfs_dir}/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch"./
@@ -235,32 +257,79 @@ runs:
 
             for file in $(find ./kernel -maxdepth 2 -name "*.rej" -exec basename {} .rej \;); do
               echo "Patching file: ${file} with fix_${file}.patch"
-              patch -p1 --forward -i "${WILD_KERNEL_PATCHES}/next/susfs_fix_patches/${susfs_version}/fix_${file}.patch"
+              patch -p1 --forward -i "${SUSFS_FIX_PATCHES_FOLDER}/${susfs_version}/fix_${file}.patch"
             done
             echo "Patching Hook Mode!"
-            patch -p1 --forward -i "${WILD_KERNEL_PATCHES}/next/susfs_fix_patches/${susfs_version}/overwrite_hook_mode.patch"
+            patch -p1 --forward -i "${SUSFS_FIX_PATCHES_FOLDER}/${susfs_version}/overwrite_hook_mode.patch"
             echo "Patching KSU_TOOLKIT Support for SuSFS kernel!"
-            patch -p1 --forward -i "${WILD_KERNEL_PATCHES}/next/susfs_fix_patches/${susfs_version}/ksu_toolkit.patch"
+            patch -p1 --forward -i "${SUSFS_FIX_PATCHES_FOLDER}/${susfs_version}/ksu_toolkit.patch"
             ;;
           "v2.1.0")
             patch -p1 --forward -i "${susfs_dir}/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch" || true
             for file in $(find ./kernel -maxdepth 2 -name "*.rej" -exec basename {} .rej \;); do
               echo "Patching file: ${file} with fix_${file}.patch"
-              patch -p1 --forward -i "${WILD_KERNEL_PATCHES}/next/susfs_fix_patches/${susfs_version}/fix_${file}.patch"
+              patch -p1 --forward -i "${SUSFS_FIX_PATCHES_FOLDER}/${susfs_version}/fix_${file}.patch"
             done
             echo "Patching Hook Mode!"
-            patch -p1 --forward -i "${WILD_KERNEL_PATCHES}/next/susfs_fix_patches/${susfs_version}/overwrite_hook_mode.patch"
+            patch -p1 --forward -i "${SUSFS_FIX_PATCHES_FOLDER}/${susfs_version}/overwrite_hook_mode.patch"
             echo "Patching KSU_TOOLKIT Support for SusFS kernel!"
-            patch -p1 --forward -i "${WILD_KERNEL_PATCHES}/next/susfs_fix_patches/${susfs_version}/ksu_toolkit.patch"
+            patch -p1 --forward -i "${SUSFS_FIX_PATCHES_FOLDER}/${susfs_version}/ksu_toolkit.patch"
 
             if [[ "$KSUVER" -le 33095 ]]; then
               echo "Patching Multi-manager Support for SusFS kernel!"
-              patch -p1 --forward -i "${WILD_KERNEL_PATCHES}/next/susfs_fix_patches/${susfs_version}/multi_manager.patch"
+              patch -p1 --forward -i "${SUSFS_FIX_PATCHES_FOLDER}/${susfs_version}/multi_manager.patch"
             fi
 
             if [[ "$KSUVER" -ge 33068 ]] && [[ "$KSUVER" -lt 33070 ]]; then
-                echo "Patching Multi-manager sepolicy Support for SusFS kernel!"
-                patch -p1 --forward -i "${WILD_KERNEL_PATCHES}/next/susfs_fix_patches/${susfs_version}/multi_sepolicy_fix.patch"
+              echo "Patching Multi-manager sepolicy Support for SusFS kernel!"
+              patch -p1 --forward -i "${SUSFS_FIX_PATCHES_FOLDER}/${susfs_version}/multi_sepolicy_fix.patch"
+            fi
+            ;;
+          "v2.2.0")
+            patch -p1 --forward -i "${susfs_dir}/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch" || true
+            for file in $(find ./kernel -maxdepth 2 -name "*.rej" -exec basename {} .rej \;); do
+              echo "Patching file: ${file} with fix_${file}.patch"
+              patch -p1 --forward -i "${SUSFS_FIX_PATCHES_FOLDER}/${susfs_version}/fix_${file}.patch"
+            done
+            echo "Patching Hook Mode!"
+            patch -p1 --forward -i "${SUSFS_FIX_PATCHES_FOLDER}/${susfs_version}/overwrite_hook_mode.patch"
+            echo "Patching KSU_TOOLKIT Support for SusFS kernel!"
+            patch -p1 --forward -i "${SUSFS_FIX_PATCHES_FOLDER}/${susfs_version}/ksu_toolkit.patch"
+
+            if [[ "$KSUVER" -le 33095 ]]; then
+              echo "Patching Multi-manager Support for SusFS kernel!"
+              patch -p1 --forward -i "${SUSFS_FIX_PATCHES_FOLDER}/${susfs_version}/multi_manager.patch"
+            fi
+
+            if [[ "$KSUVER" -ge 33068 ]] && [[ "$KSUVER" -lt 33070 ]]; then
+              echo "Patching Multi-manager sepolicy Support for SusFS kernel!"
+              patch -p1 --forward -i "${SUSFS_FIX_PATCHES_FOLDER}/${susfs_version}/multi_sepolicy_fix.patch"
+            fi
+            ;;
+          "v2.3.0")
+            patch -p1 --forward -i "${susfs_dir}/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch" || true
+            for file in $(find ./kernel -maxdepth 2 -name "*.rej" -exec basename {} .rej \;); do
+              echo "Patching file: ${file} with fix_${file}.patch"
+              patch -p1 --forward -i "${SUSFS_FIX_PATCHES_FOLDER}/${susfs_version}/fix_${file}.patch"
+            done
+            echo "Patching Hook Mode!"
+            patch -p1 --forward -i "${SUSFS_FIX_PATCHES_FOLDER}/${susfs_version}/overwrite_hook_mode.patch"
+            echo "Patching KSU_TOOLKIT Support for SusFS kernel!"
+            patch -p1 --forward -i "${SUSFS_FIX_PATCHES_FOLDER}/${susfs_version}/ksu_toolkit.patch"
+
+            if [[ "$KSUVER" -le 33095 ]]; then
+              echo "Patching Multi-manager Support for SusFS kernel!"
+              patch -p1 --forward -i "${SUSFS_FIX_PATCHES_FOLDER}/${susfs_version}/multi_manager.patch"
+            fi
+
+            if [[ "$KSUVER" -ge 33068 ]] && [[ "$KSUVER" -lt 33070 ]]; then
+              echo "Patching Multi-manager sepolicy Support for SusFS kernel!"
+              patch -p1 --forward -i "${SUSFS_FIX_PATCHES_FOLDER}/${susfs_version}/multi_sepolicy_fix.patch"
+            fi
+
+            if [ -f "./kernel/Kbuild.rej" ] && [ -f "${SUSFS_FIX_PATCHES_FOLDER}/${susfs_version}/fix_Kbuild.patch" ]; then
+              echo "Patching Kbuild with fix_Kbuild.patch"
+              patch -p1 --forward -i "${SUSFS_FIX_PATCHES_FOLDER}/${susfs_version}/fix_Kbuild.patch" || true
             fi
             ;;
           *)
@@ -296,7 +365,7 @@ runs:
           fi
           
           if grep -qF 'if (vma->vm_end > last_vma_end)' ./fs/proc/task_mmu.c && ! grep -qxF 'SUSFS_IS_INODE_SUS_MAP' ./fs/proc/task_mmu.c; then
-            echo "Temporarily expand the `last_vma_end` `if` block to fix a matching issue."
+            echo "Temporarily expand the last_vma_end if block to fix a matching issue."
             perl -i -0pe 's/\t\t\tif \(vma->vm_end > last_vma_end\)\n\t\t\t\tsmap_gather_stats\(vma, &mss, last_vma_end\);/\t\t\tif (vma->vm_end > last_vma_end) {\n\t\t\t\tsmap_gather_stats(vma, \&mss, last_vma_end);\n\t\t\t\tlast_vma_end = vma->vm_end;\n\t\t\t}/' ./fs/proc/task_mmu.c
             fake_patched_expand=1
           fi
@@ -497,7 +566,6 @@ runs:
         cd "${ROOT_DIR}/common"
 
         if [[ -d "${KERNEL_KIT}/kernel_patches/${CODENAME}-${OS_SHORT}/common" ]]; then
-          # We don't need to handle this actually but just in case if someone left an empty dir
           shopt -s nullglob
 
           for patch in "${KERNEL_KIT}/kernel_patches/${CODENAME}-${OS_SHORT}/common"/*.patch; do
