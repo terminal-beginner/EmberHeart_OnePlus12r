@@ -40,6 +40,11 @@ on:
         required: true
         type: boolean
         default: true
+      blacklist_modules:
+        description: 'Comma-separated vendor modules to blacklist (safe ones only). Leave empty for auto.'
+        required: false
+        type: string
+        default: ''
       ksun_branch:
         description: 'Enter KernelSU Next Branch or commit hash (blank for stable tag)'
         required: true
@@ -281,6 +286,7 @@ jobs:
           ksun_branch_or_hash: ${{ inputs.ksun_branch }}
           use_susfs: ${{ inputs.use_susfs }}
           susfs_commit_hash_or_branch: ${{ inputs.susfs_branch_or_commit }}
+          blacklist_modules: ${{ inputs.blacklist_modules }}     # ← naya line
           github_token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Kernel Modules modifications
