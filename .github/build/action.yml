@@ -897,6 +897,39 @@ runs:
         echo "Boot image created ✅"
         echo "::endgroup::"
 
+    - name: Create flashable zip (boot.img + AK3)
+      if: ${{ always() }}
+      shell: bash
+      run: |
+        set -euo pipefail
+        echo "::group::Create flashable zip"
+        cd "${DIST_DIR}"
+        FLASHABLE="flashable_${{ env.CODENAME }}-${{ env.OS_SHORT }}.zip"
+        rm -f "${FLASHABLE}"
+        FILES=()
+        [ -f "boot.img" ] && FILES+=("boot.img")
+        if [ -n "${AK3_ZIP:-}" ] && [ -f "${AK3_ZIP}" ]; then
+          FILES+=("${AK3_ZIP}")
+        fi
+        if [ ${#FILES[@]} -eq 0 ]; then
+          echo "::warning::No boot.img or AK3 zip found — skipping flashable"
+          echo "::endgroup::"
+          exit 0
+        fi
+        zip -r9 "${FLASHABLE}" "${FILES[@]}" >/dev/null
+        echo "Created ${FLASHABLE} ($(du -h "${FLASHABLE}" | cut -f1))"
+        echo "FLASHABLE=${FLASHABLE}" >> "${GITHUB_ENV}"
+        echo "::endgroup::"
+
+    - name: Upload flashable artifact (boot.img + AK3.zip)
+      if: ${{ always() }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ env.CODENAME }}-${{ env.OS_SHORT }}-flashable
+        path: ${{ env.DIST_DIR }}/flashable_${{ env.CODENAME }}-${{ env.OS_SHORT }}.zip
+        if-no-files-found: warn
+        retention-days: 30
+
     - name: Create system_dlkm Image
       if: ${{ inputs.compile_dlkm == 'true' }}
       id: create_system_dlkm
@@ -1809,4 +1842,3 @@ runs:
           echo "> ## CCache Statistics :"
           echo "> $(ccache -s -v)"
         } >> "${GITHUB_STEP_SUMMARY}"
-
