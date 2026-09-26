@@ -17,6 +17,9 @@ a workflow's "Run <command>" log line:
 Which chat/thread to send to (test vs release) is decided by the
 *caller* (the workflow step), not this script — this script just sends
 to whatever chat/thread it's given.
+
+thread-id is OPTIONAL. For topic-less groups, leave TELEGRAM_THREAD_ID
+unset/empty and the message_thread_id field is omitted from the request.
 """
 from __future__ import annotations
 
@@ -71,7 +74,7 @@ def parse_args() -> argparse.Namespace:
 
     p.add_argument("--bot-token", default=os.environ.get("TELEGRAM_BOT_TOKEN"))
     p.add_argument("--chat-id", default=os.environ.get("TELEGRAM_CHAT_ID"))
-    p.add_argument("--thread-id", default=os.environ.get("TELEGRAM_THREAD_ID"))
+    p.add_argument("--thread-id", default=os.environ.get("TELEGRAM_THREAD_ID", ""))
     p.add_argument("--api-base", default=os.environ.get("TELEGRAM_API_BASE", "https://api.telegram.org"))
 
     p.add_argument("--dry-run", action="store_true", help="Print the payload instead of sending it.")
@@ -237,9 +240,14 @@ def send(args: argparse.Namespace, markdown: str, media: list[dict], attach_path
 
     fields = {
         "chat_id": args.chat_id,
-        "message_thread_id": args.thread_id,
         "rich_message": json.dumps(payload),
     }
+    # message_thread_id is only valid for topic-enabled supergroups.
+    # For topic-less groups, omit the field entirely — sending it empty
+    # makes Telegram return a 400 Bad Request.
+    if args.thread_id:
+        fields["message_thread_id"] = args.thread_id
+
     file_fields = dict(attach_paths)  # {attach_id: local_path}, already resolved
 
     body, content_type = encode_multipart(fields, file_fields)
@@ -274,8 +282,11 @@ def send(args: argparse.Namespace, markdown: str, media: list[dict], attach_path
 
 def main() -> None:
     args = parse_args()
-    if not args.dry_run and (not args.bot_token or not args.chat_id or not args.thread_id):
-        sys.exit("telegram.py: --bot-token/--chat-id/--thread-id (or their env vars) are required unless --dry-run")
+    # bot-token and chat-id are the only truly required values.
+    # thread-id is optional; when empty, message goes to the group's
+    # General topic (or main group if topics aren't enabled).
+    if not args.dry_run and (not args.bot_token or not args.chat_id):
+        sys.exit("telegram.py: --bot-token/--chat-id (or their env vars) are required unless --dry-run")
 
     ctx = bi.github_context()
     markdown, media, attach_paths = build_message(args, ctx)
