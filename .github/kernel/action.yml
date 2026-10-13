@@ -130,8 +130,6 @@ runs:
         cd "${ROOT_DIR}"
         echo "Adding KernelSU Next..."
 
-        # Always clone vanilla KernelSU-Next. SUSFS is enabled later by applying
-        # 10_enable_susfs_for_ksu.patch from the simonpunk/susfs4ksu repo.
         KSU_INPUT="${{ inputs.ksun_branch_or_hash }}"
 
         if [[ -z "${KSU_INPUT}" ]]; then
@@ -415,7 +413,41 @@ runs:
           fi
         fi
 
-        patch -p1 --fuzz=3 -i 50_add_susfs_in_${{ env.SUSFS_KERNEL_BRANCH }}.patch
+        echo "Applying direct fixes to fs/namespace.c for SUSFS v2.3.0..."
+
+        python3 -c "p='fs/namespace.c'; c=open(p).read(); c=c.replace('#include <linux/mnt_idmapping.h>', '#include <linux/mnt_idmapping.h>' + chr(10) + '#ifdef CONFIG_KSU_SUSFS' + chr(10) + '#include <linux/susfs_def.h>' + chr(10) + '#endif', 1) if 'susfs_def.h' not in c else c; c=c.replace('#include \"internal.h\"', '#include \"internal.h\"' + chr(10) + '#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT' + chr(10) + 'extern bool susfs_is_current_ksu_domain(void);' + chr(10) + 'extern struct static_key_true susfs_is_sdcard_android_data_not_decrypted;' + chr(10) + '#define CL_COPY_MNT_NS BIT(25)' + chr(10) + '#endif', 1) if 'susfs_is_current_ksu_domain' not in c else c; open(p, 'w').write(c)"
+
+        if grep -q '#include <linux/susfs_def.h>' ./fs/namespace.c && grep -q 'susfs_is_current_ksu_domain' ./fs/namespace.c; then
+          echo "✅ Direct fixes applied successfully"
+          sed -n '25,50p' ./fs/namespace.c
+        else
+          echo "::error::Failed to add required declarations to fs/namespace.c"
+          exit 1
+        fi
+
+        echo "=============================================="
+        echo "Applying 50_add_susfs_in_${SUSFS_KERNEL_BRANCH}.patch"
+        echo "=============================================="
+
+        if patch -p1 --fuzz=3 --forward -i 50_add_susfs_in_${SUSFS_KERNEL_BRANCH}.patch; then
+          echo "✅ 50_add_susfs patch applied cleanly"
+        else
+          echo "::warning::50_add_susfs patch had hunks that didn't apply cleanly"
+
+          REJ_COUNT=$(find . -name "*.rej" | wc -l)
+          echo "Total .rej files found: ${REJ_COUNT}"
+
+          if [ "$REJ_COUNT" -gt 0 ]; then
+            find . -name "*.rej" | sort | while read -r rejfile; do
+              echo "=== .rej FILE: ${rejfile} ==="
+              cat "${rejfile}"
+              echo "=== END ==="
+            done
+          fi
+
+          find . -name "*.rej" -delete
+          echo "Cleaned up .rej files"
+        fi
 
         if [[ "$fake_patched_expand" = 1 ]]; then
           if [[ "${{ env.ANDROID_RELEASE }}" = "android15" ]] && [[ "${{ env.KERNEL_VERSION }}" = "6.6" ]]; then
@@ -580,7 +612,6 @@ runs:
         cd "${ROOT_DIR}/common"
 
         if [[ -d "${KERNEL_KIT}/kernel_patches/${CODENAME}-${OS_SHORT}/common" ]]; then
-          # We don't need to handle this actually but just in case if someone left an empty dir
           shopt -s nullglob
 
           for patch in "${KERNEL_KIT}/kernel_patches/${CODENAME}-${OS_SHORT}/common"/*.patch; do
@@ -668,10 +699,6 @@ runs:
         echo "Other kernel patches applied 🔥"
         echo "::endgroup::"
 
-    # ─────────────────────────────────────────────────────────────
-    # NEW: Fake config.gz patch — hides custom kernel indicators
-    # from /proc/config.gz so detection apps can't read real config
-    # ─────────────────────────────────────────────────────────────
     - name: Apply Fake config.gz patch
       shell: bash
       run: |
@@ -692,7 +719,6 @@ runs:
           echo "::warning::fake_config patch had hunks that didn't apply cleanly — continuing"
         fi
 
-        # Configs to hide from /proc/config.gz (reveal custom kernel / root)
         HIDE_LIST=(
           "CONFIG_KSU"
           "CONFIG_KSU_SUSFS"
@@ -719,10 +745,6 @@ runs:
         done
         echo "::endgroup::"
 
-    # ─────────────────────────────────────────────────────────────
-    # NEW: Vendor debloat — blacklist non-critical vendor modules
-    # from being built (safe list; risky modules auto-skipped)
-    # ─────────────────────────────────────────────────────────────
     - name: Disable Vendor / Kernel Modules
       shell: bash
       run: |
@@ -730,7 +752,6 @@ runs:
         echo "::group::Disable Vendor / Kernel Modules"
         cd "${ROOT_DIR}/common"
 
-        # Modules that MUST NEVER be blacklisted (system critical)
         RISKY_MODULES=(
           "coresight" "rust_binder" "msm_kgsl" "camera" "oplusboot"
           "rmnet_wlan" "rmnet_core" "msm_drm" "cnss2" "oplus_chg_v2"
@@ -745,7 +766,6 @@ runs:
           [[ -n "$mod" ]] && modules+=("$mod")
         done
 
-        # Auto-add network tuning modules (redundant with BBR/BBR3)
         for auto in "oplus_network_tuning" "oplus_networks_tuning"; do
           already=0
           for m in "${modules[@]}"; do
@@ -754,7 +774,6 @@ runs:
           [ "$already" = 0 ] && modules+=("$auto")
         done
 
-        # Safety filter: drop any risky modules
         declare -a validated=()
         for mod in "${modules[@]}"; do
           is_risky=false
@@ -779,7 +798,6 @@ runs:
         echo "CONFIG_DEBOAT_VENDOR_MODULES_PLACEHOLDER=1" >> /dev/null || true
         echo "CONFIG_DEBLOAT_VENDOR_MODULES=${RESULT_LIST}" >> arch/arm64/configs/kernel.config
 
-        # Pick the right support patch for the kernel version
         MIN_VERSION="5.16"
         if [[ "$(printf '%s\n' "${KERNEL_VERSION}" "${MIN_VERSION}" | sort -V | head -n1)" == "${KERNEL_VERSION}" ]]; then
           VENDOR_PATCH="${WILD_KERNEL_PATCHES}/common/vendor_modules/0001-Support-conditional-vendor-modules-blacklisting-5.15-and-below.patch"
@@ -807,7 +825,6 @@ runs:
         echo "::group::Applying Nethunter configs..."
         cd "${ROOT_DIR}/common"
 
-        # Bluetooth configs
         ./scripts/config --file arch/arm64/configs/kernel.config \
           -e CONFIG_BT_HCIBTUSB \
           -e CONFIG_BT_HCIBTUSB_BCM \
@@ -817,12 +834,10 @@ runs:
           -e CONFIG_BT_HCIBPA10X \
           -e CONFIG_BT_HCIBFUSB
 
-        # Airspy & HackRF
         ./scripts/config --file arch/arm64/configs/kernel.config \
           -e CONFIG_USB_AIRSPY \
           -e CONFIG_USB_HACKRF
 
-        # CAN
         ./scripts/config --file arch/arm64/configs/kernel.config \
           -e CONFIG_CAN \
           -e CONFIG_CAN_DEV \
@@ -832,31 +847,26 @@ runs:
           -e CONFIG_CAN_GRCAN \
           -e CONFIG_CAN_XILINXCAN
 
-        # Bosch C_CAN/D_CAN devices
         ./scripts/config --file arch/arm64/configs/kernel.config \
           -e CONFIG_CAN_C_CAN \
           -e CONFIG_CAN_C_CAN_PLATFORM \
           -e CONFIG_CAN_C_CAN_PCI
 
-        # Bosch CC770 and Intel AN82527 devices
         ./scripts/config --file arch/arm64/configs/kernel.config \
           -e CONFIG_CAN_CC770 \
           -e CONFIG_CAN_CC770_ISA \
           -e CONFIG_CAN_CC770_PLATFORM
 
-        # Bosch M_CAN devices
         ./scripts/config --file arch/arm64/configs/kernel.config \
           -e CONFIG_CAN_M_CAN \
           -e CONFIG_CAN_M_CAN_PCI \
           -e CONFIG_CAN_M_CAN_PLATFORM \
           -e CONFIG_CAN_M_CAN_TCAN4X5X
 
-        # CAN SPI interfaces
         ./scripts/config --file arch/arm64/configs/kernel.config \
           -e CONFIG_CAN_HI311X \
           -e CONFIG_CAN_MCP251X
 
-        # CAN USB interfaces
         ./scripts/config --file arch/arm64/configs/kernel.config \
           -e CONFIG_CAN_8DEV_USB \
           -e CONFIG_CAN_EMS_USB \
@@ -865,14 +875,12 @@ runs:
           -e CONFIG_CAN_KVASER_USB \
           -e CONFIG_CAN_PEAK_USB
 
-        # CAN - Networking
         ./scripts/config --file arch/arm64/configs/kernel.config \
           -e CONFIG_NETLINK_DIAG \
           -e CONFIG_VSOCKETS \
           -e CONFIG_NET_SCHED \
           -e CONFIG_NET_EMATCH_CANID
 
-        # USB Serial Converter
         ./scripts/config --file arch/arm64/configs/kernel.config \
           -e CONFIG_USB_SERIAL \
           -e CONFIG_USB_SERIAL_CONSOLE \
@@ -898,7 +906,6 @@ runs:
 
         echo "FEATURES=${FEATURES:-} lru_gen" >> "${GITHUB_ENV}"
 
-        # Add for Droidspaces support
         echo "Applying patch to enable SYSVIPC without breaking ABI"
         case "$BRANCH" in
           oneplus/sm8850|oneplus/sm8845)
@@ -981,7 +988,6 @@ runs:
             ;;
         esac
 
-        # Add extra check in case soc specific case failed
         if [[ "${_sysvipc:-false}" == "true" ]]; then
           if patch -R -p1 -s -N --dry-run -i "${WILD_KERNEL_PATCHES}/common/droidspaces/fix_sysvipc_kabi_6_7_8.patch" >/dev/null 2>&1; then
             echo "::note:: Patch already applied. Skipping."
